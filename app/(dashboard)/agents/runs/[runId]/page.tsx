@@ -969,18 +969,58 @@ export default function RunStreamPage() {
           </div>
         )}
 
-        {/* Live progress bar + status text */}
+        {/* ── Live activity strip ── shown only while the run is in flight.
+            Displays a status line (driven by currentStatus) plus the most
+            recent tool events so users can see exactly what the agent is
+            doing right now, without having to scroll to the full Activity
+            section further down. */}
         {isRunning && (
-          <div className="mt-2">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                <span>{currentStatus}</span>
-              </div>
-            </div>
+          <div className="mt-2 space-y-1.5">
+            {/* Indeterminate progress bar — same as before */}
             <div className="h-0.5 rounded-full overflow-hidden bg-muted">
               <div className="h-full rounded-full bg-primary animate-progress-indeterminate" />
             </div>
+
+            {/* Status line — uses currentStatus, which the SSE handler bumps
+                on every tool_start. Falls back to "Working…" between calls. */}
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+              <span className="truncate">{currentStatus}</span>
+            </div>
+
+            {/* Recent tool events — newest first, capped at 4 rows. Spinner
+                for in-progress, check for complete. Same data the Activity
+                CollapsibleSection below uses; this is the live mirror so
+                users can see the timeline without expanding anything. */}
+            {toolEvents.length > 0 && (
+              <ul className="rounded-md border bg-muted/20 divide-y divide-border/50">
+                {toolEvents.slice(0, 4).map((te, i) => {
+                  const emoji = TOOL_EMOJI[te.tool] ?? '🔧'
+                  const label = TOOL_LABEL[te.tool] ?? te.tool.replace(/_/g, ' ')
+                  return (
+                    <li key={i} className="flex items-center gap-2 text-xs px-2.5 py-1.5">
+                      {te.inProgress
+                        ? <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
+                        : <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />}
+                      <span className="shrink-0">{emoji}</span>
+                      <span className={cn('truncate', te.inProgress ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-foreground')}>
+                        {label}
+                      </span>
+                      {te.inProgress
+                        ? <span className="ml-auto text-[10px] text-muted-foreground animate-pulse shrink-0">running…</span>
+                        : te.resultSummary
+                          ? <span className="ml-auto text-[10px] text-muted-foreground truncate max-w-[40%]">→ {te.resultSummary}</span>
+                          : null}
+                    </li>
+                  )
+                })}
+                {toolEvents.length > 4 && (
+                  <li className="px-2.5 py-1 text-[10px] text-muted-foreground italic">
+                    + {toolEvents.length - 4} earlier · expand Activity for the full timeline
+                  </li>
+                )}
+              </ul>
+            )}
           </div>
         )}
       </div>
