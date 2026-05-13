@@ -102,11 +102,16 @@ export async function GET(
       // executeTool() and clears it on completion. Tracking it here lets us
       // emit a tool_start event the moment a tool begins, instead of waiting
       // for the placeholder row to flush through tool_calls.
+      // Initial replay — only emit a current_tool tool_start when the
+      // saved tool_calls don't already have a matching placeholder as
+      // their last entry (otherwise the loop above already emitted it).
       let lastCurrentTool: string | null = last.current_tool ?? null
-      if (lastCurrentTool && !startedIdx.has(initialTools.length)) {
-        // Replay an active tool that started AFTER the saved tool_calls
-        // (i.e. the placeholder row write hasn't yet been observed).
-        send({ type: 'tool_start', tool: lastCurrentTool as never, input: {} as never })
+      if (lastCurrentTool) {
+        const lastReplayed = initialTools.length > 0 ? initialTools[initialTools.length - 1].tool : null
+        if (lastReplayed !== lastCurrentTool && !startedIdx.has(initialTools.length)) {
+          send({ type: 'tool_start', tool: lastCurrentTool as never, input: {} as never })
+          startedIdx.add(initialTools.length)
+        }
       }
 
       // If already terminal — emit the final event and close.
@@ -147,18 +152,24 @@ export async function GET(
         }
 
         // current_tool transition — emit tool_start the moment the runner
-        // writes a new tool name, even before the placeholder row lands in
-        // tool_calls. This is what kills the "Thinking…" silence at the
-        // start of long tool calls.
+        // writes a new tool name. Only fires when there is NO matching
+        // placeholder at the end of tool_calls yet (the rare race where
+        // current_tool leads the tool_calls UPDATE — in practice they land
+        // in the same DB write, in which case the placeholder loop below
+        // handles the emit and this branch stays quiet).
         const newCurrentTool = r.current_tool ?? null
         if (newCurrentTool && newCurrentTool !== lastCurrentTool) {
-          // Mark the index that this current_tool will land on as already
-          // started, so the tool_calls loop below doesn't emit a duplicate
-          // tool_start when the placeholder appears.
-          const expectedIdx = (Array.isArray(r.tool_calls) ? r.tool_calls.length : 0)
-          if (!startedIdx.has(expectedIdx)) {
-            send({ type: 'tool_start', tool: newCurrentTool as never, input: {} as never })
-            startedIdx.add(expectedIdx)
+          const tools0   = Array.isArray(r.tool_calls) ? r.tool_calls : []
+          const lastIdx  = tools0.length - 1
+          const lastTool = lastIdx >= 0 ? tools0[lastIdx].tool : null
+          if (lastTool !== newCurrentTool) {
+            // No matching placeholder yet — reserve the NEXT index so the
+            // tool_calls loop won't double-emit once the placeholder lands.
+            const expectedIdx = tools0.length
+            if (!startedIdx.has(expectedIdx)) {
+              send({ type: 'tool_start', tool: newCurrentTool as never, input: {} as never })
+              startedIdx.add(expectedIdx)
+            }
           }
         }
         lastCurrentTool = newCurrentTool

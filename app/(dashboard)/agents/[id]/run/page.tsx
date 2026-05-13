@@ -107,10 +107,11 @@ export default function AgentRunPage() {
 
   // Per-run attachments
   interface AttachmentChip {
-    type:  'linked' | 'uploaded'
+    type:  'linked' | 'linked-report' | 'uploaded'
     label: string
-    docId?: string   // when type === 'linked'
-    file?:  File     // when type === 'uploaded'
+    docId?:    string   // when type === 'linked'
+    reportId?: string   // when type === 'linked-report'
+    file?:     File     // when type === 'uploaded'
   }
   const [attachments,    setAttachments]   = useState<AttachmentChip[]>([])
   const [pickerOpen,     setPickerOpen]    = useState(false)
@@ -239,8 +240,9 @@ export default function AgentRunPage() {
         } catch { /* non-fatal */ }
       }
 
-      const linkedIds = attachments.filter(a => a.type === 'linked').map(a => a.docId!).filter(Boolean)
-      const uploads   = attachments.filter(a => a.type === 'uploaded' && a.file).map(a => a.file!)
+      const linkedIds       = attachments.filter(a => a.type === 'linked')       .map(a => a.docId!)   .filter(Boolean)
+      const linkedReportIds = attachments.filter(a => a.type === 'linked-report').map(a => a.reportId!).filter(Boolean)
+      const uploads         = attachments.filter(a => a.type === 'uploaded' && a.file).map(a => a.file!)
 
       const res = await fetch(`/api/agents/${agentId}/run`, {
         method:  'POST',
@@ -258,6 +260,7 @@ export default function AgentRunPage() {
           notify_email:         notifyEmailOn && notifyEmail.trim() ? notifyEmail.trim() : null,
           notify_slack_channel: notifySlackOn && notifySlack.trim() ? notifySlack.trim() : null,
           linked_document_ids:  linkedIds.length > 0 ? linkedIds : undefined,
+          linked_report_ids:    linkedReportIds.length > 0 ? linkedReportIds : undefined,
         }),
       })
       const json = await res.json()
@@ -351,7 +354,7 @@ export default function AgentRunPage() {
                 size="sm" variant="outline" className="h-7 gap-1.5 text-xs"
                 onClick={() => setPickerOpen(true)}
               >
-                <FileText className="h-3.5 w-3.5" /> Link from Documents
+                <FileText className="h-3.5 w-3.5" /> Link documents or reports
               </Button>
               <Button
                 size="sm" variant="outline" className="h-7 gap-1.5 text-xs"
@@ -387,7 +390,9 @@ export default function AgentRunPage() {
                   <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                   <span className="flex-1 min-w-0 text-sm truncate">{a.label}</span>
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
-                    {a.type === 'linked' ? 'Document' : 'Upload'}
+                    {a.type === 'linked'        ? 'Document'
+                    : a.type === 'linked-report' ? 'Report'
+                    :                              'Upload'}
                   </span>
                   <button
                     onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
@@ -404,15 +409,21 @@ export default function AgentRunPage() {
 
       {pickerOpen && (
         <DocumentPickerModal
+          allowReports
           onSelect={(picked: PickableDocument[]) => {
             setAttachments(prev => [
               ...prev,
-              ...picked.map(d => ({ type: 'linked' as const, label: d.title, docId: d.id })),
+              ...picked.map(d => d.source === 'report'
+                ? { type: 'linked-report' as const, label: d.title, reportId: d.id }
+                : { type: 'linked'        as const, label: d.title, docId:    d.id }),
             ])
             setPickerOpen(false)
           }}
           onClose={() => setPickerOpen(false)}
-          excludeIds={attachments.filter(a => a.type === 'linked').map(a => a.docId!).filter(Boolean)}
+          excludeIds={[
+            ...attachments.filter(a => a.type === 'linked').map(a => a.docId!).filter(Boolean),
+            ...attachments.filter(a => a.type === 'linked-report').map(a => a.reportId!).filter(Boolean),
+          ]}
         />
       )}
 

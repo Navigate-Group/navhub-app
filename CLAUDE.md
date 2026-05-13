@@ -5200,3 +5200,64 @@ for purely informational questions.
 - `RESEND_API_KEY` + `RESEND_FROM_DOMAIN` already required for the
   acknowledgement + response emails (feedback still saves without them
   configured; just no email goes out)
+
+---
+
+## Linked Reports + Pre-Flight Check + Streaming Dedupe (migration 059)
+
+### Linked reports as run attachments
+The run launcher's "Link from Documents" picker now offers reports too
+(`DocumentPickerModal` was already capable via `allowReports`). Selected
+reports are stored in the new `agent_runs.linked_report_ids uuid[]`
+column (migration 059) and the runner materialises each into
+`agent_run_attachments` at run start — HTML is downloaded from the
+`report-files` Storage bucket, stripped of `<style>` / `<script>` /
+tags, whitespace collapsed, clamped to 50k chars, and saved as the
+attachment's `content_text` with `file_type: 'text/html'`. The agent
+reads them with `read_attachment` like any other file.
+
+`AttachmentChip` discriminated union extended with `'linked-report'`,
+and the row label distinguishes "Document" / "Report" / "Upload".
+`POST /api/agents/[id]/run` accepts `linked_report_ids` alongside
+`linked_document_ids`.
+
+### Pre-flight check (system prompt)
+Every run now opens with a mandatory pre-flight block:
+1. List every resource needed (documents, reports, attachments,
+   financial data, companies)
+2. Verify access via the appropriate tool
+3. If anything is missing or inaccessible, batch all missing items
+   into ONE `ask_user` call — never ask one at a time
+4. Only begin actual work after access is confirmed; proceed silently
+   when everything is accessible
+
+Catches the common failure where the agent starts work and then trips
+over a missing resource mid-task. Applies to every tier including
+professional (which previously skipped the estimated-time preamble —
+pre-flight still runs).
+
+### Streaming dedupe — fixed duplicate `tool_start` emits
+Symptom: the run-detail page showed orphaned "running…" spinners that
+never resolved, sometimes with duplicate entries.
+
+Root cause: the stream route emitted `tool_start` from BOTH
+`current_tool` AND the `tool_calls` placeholder, with mismatched index
+reservation. `expectedIdx = tool_calls.length` reserved the
+*next-to-be-created* index, while the matching placeholder was already
+at `length - 1`. The placeholder loop then re-emitted because its
+real index wasn't in `startedIdx`.
+
+Fix: only emit from `current_tool` when there's NO matching placeholder
+at the end of `tool_calls`. In normal operation the runner writes both
+in a single `await admin.update(...)` so the placeholder loop handles
+the emit; the `current_tool` branch now only fires in the rare race
+where `current_tool` leads the `tool_calls` UPDATE. Same logic applied
+to the initial-snapshot replay path.
+
+Net effect: every tool emits exactly one `tool_start` and one
+`tool_end`. The Activity panel's spinners resolve cleanly and the
+"Thinking…" indicator disappears the moment the first tool actually
+runs.
+
+### Manual setup required
+- Run migration `059_linked_reports.sql` in Supabase

@@ -1564,10 +1564,11 @@ export async function executeAgentRun(
     // Pulled in once per run from the run.linked_document_ids column.
     const { data: runRow } = await admin
       .from('agent_runs')
-      .select('linked_document_ids, output_folder_id, output_status, output_name_override, output_type, task_complexity, preload_context')
+      .select('linked_document_ids, linked_report_ids, output_folder_id, output_status, output_name_override, output_type, task_complexity, preload_context')
       .eq('id', runId)
       .single()
-    const linkedIds    = (runRow?.linked_document_ids ?? []) as string[]
+    const linkedIds       = (runRow?.linked_document_ids ?? []) as string[]
+    const linkedReportIds = (runRow?.linked_report_ids   ?? []) as string[]
     const taskComplexity = ((runRow as { task_complexity?: string } | null)?.task_complexity
                               ?? 'standard') as TaskComplexity
     const complexityCfg  = TASK_COMPLEXITY_SETTINGS[taskComplexity] ?? TASK_COMPLEXITY_SETTINGS.standard
@@ -1583,6 +1584,47 @@ export async function executeAgentRun(
           file_type:    d.file_type ?? 'text/markdown',
           file_path:    d.file_path ?? '',
           content_text: d.content_markdown ?? '',
+        })
+      }
+    }
+
+    // ── Materialise linked reports into agent_run_attachments ──────────────
+    // Reports live in Storage as HTML — we strip tags + collapse whitespace
+    // and clamp to 50k chars so the agent can read them with read_attachment
+    // just like any other text file.
+    if (linkedReportIds.length > 0) {
+      const { data: reports } = await admin
+        .from('custom_reports')
+        .select('id, name, file_path')
+        .in('id', linkedReportIds)
+      for (const r of (reports ?? []) as Array<{ id: string; name: string; file_path: string | null }>) {
+        let contentText = ''
+        if (r.file_path) {
+          try {
+            const { data: fileData } = await admin.storage
+              .from('report-files')
+              .download(r.file_path)
+            if (fileData) {
+              const html = await fileData.text()
+              contentText = html
+                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 50_000)
+            }
+          } catch (err) {
+            console.error('[runner] linked report download failed:', err)
+          }
+        }
+        await admin.from('agent_run_attachments').insert({
+          run_id:       runId,
+          file_name:    r.name,
+          file_type:    'text/html',
+          file_path:    r.file_path ?? '',
+          content_text: contentText,
         })
       }
     }
@@ -1799,6 +1841,23 @@ ${tierMessage[taskComplexity]} Up to ${complexityCfg.maxIterations} iterations �
 
 Before any work, output one line in the format: ⏱ Estimated time: [X min] — [what you'll do]. Then begin immediately without confirmation.`
     }
+
+    // Pre-flight check — every run, regardless of tier. Forces the agent to
+    // verify access to every resource it needs BEFORE starting, batching
+    // any missing-resource issues into one ask_user call.
+    systemPrompt += `
+
+## Pre-flight check (REQUIRED before starting any task)
+Before doing ANY work, you MUST:
+1. List every resource you will need: documents, reports, attachments, financial data, companies.
+2. Verify you can access each one by calling the appropriate tool (list_documents, list_report_templates, read_attachment, read_companies, list of attached file_names from the system prompt, etc.).
+3. If ANYTHING is missing or inaccessible, call ask_user IMMEDIATELY with ONE clear message listing ALL missing items.
+4. Only begin the actual task after confirming all resources are accessible.
+
+Example if resources are missing:
+"Before I start, I need to confirm access to: (1) the Q1 Financial Report attachment, (2) financial data for AxisTech Rural. I can see the attachment but cannot find the financial data. Can you confirm the company name or attach the relevant data?"
+
+Never start work and then discover mid-task that you cannot access something. Never ask about missing resources one at a time — list all issues in a single ask_user call. If all resources are accessible, proceed silently without commenting on the pre-flight check.`
 
     // Document creation guidance — only when create/update tools are enabled.
     if (hasDocTools) {

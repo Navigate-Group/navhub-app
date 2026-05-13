@@ -99,6 +99,10 @@ export async function POST(
     const ids = (body.linked_document_ids as unknown[]).filter((x): x is string => typeof x === 'string')
     insertData.linked_document_ids = ids
   }
+  if (Array.isArray(body.linked_report_ids)) {
+    const ids = (body.linked_report_ids as unknown[]).filter((x): x is string => typeof x === 'string')
+    insertData.linked_report_ids = ids
+  }
   if (typeof body.task_complexity === 'string'
       && ['standard', 'medium', 'large', 'massive', 'professional'].includes(body.task_complexity)) {
     insertData.task_complexity = body.task_complexity
