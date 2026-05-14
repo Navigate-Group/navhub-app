@@ -5261,3 +5261,55 @@ runs.
 
 ### Manual setup required
 - Run migration `059_linked_reports.sql` in Supabase
+
+---
+
+## Sage Output Quality + Admin Finding UX
+
+### `lib/sage-runner.ts` — prompt rewrite
+Earlier Sage scans were producing duplicate findings about the same
+root cause ("group e46accee" surfaced four ways), over-escalating to
+`ESCALATE_TO_BUILDER`, leaking raw UUIDs into operator-facing copy,
+and never emitting positive findings even when groups were running
+cleanly.
+
+The brief now ships:
+- A pre-computed **"Failures by group"** breakdown (top 10 by count)
+  before the failed-run sample, so the clustering rule is mechanical
+  for the model rather than aspirational.
+- A **"Group ID → name map"** the model is required to consult — any
+  reference to a group in a finding must use the name, not the UUID.
+- Failed-run sample lines now resolve `group_id` to its name inline.
+- A **CRITICAL RULES** block replacing the prior prose:
+  1. Cluster aggressively (one finding per root cause; bump
+     `affected_count` instead of duplicating)
+  2. Resolve every group ID to its name; never leak UUIDs
+  3. Tag actions correctly — default to `OPERATOR_CAN_ACT` unless the
+     only fix is code; explicit examples for each tag
+  4. Include at least one positive finding if anything is going well
+  5. Prioritise by impact (one finding about 8 failures beats four
+     about the same 8)
+  6. Be specific — exact numbers, exact names, quoted error strings
+
+### Admin Sage page — search, filters, timestamps, group pills
+`app/(admin)/admin/sage/page.tsx` reorganised so multiple filter
+dimensions can be combined:
+- **Status pills** (Open / Acknowledged / Resolved / Dismissed / All)
+  drive the API fetch — server-side narrows on status only, so the
+  response is cacheable.
+- A **search box** plus three selects (severity / action / type)
+  refine client-side over the loaded list via a `useMemo`. Search
+  matches `title`, `observation`, `interpretation`, `recommendation`.
+- **Result count badge** — `N of M findings (filtered)` shows the
+  active filter scope.
+- **Timestamp + scan source** rendered under each finding title:
+  `5 May 2026, 9:14 am · weekly scan`.
+- **Affected groups resolved to names** — fetched once from
+  `/api/admin/groups` into a `groupMap`, then rendered as a comma
+  list (capped at 4 + "+N" overflow) in the card meta line.
+
+The findings API (`/api/admin/sage/findings`) already supported
+`severity` / `action` / `type` / `scan_id` filters from the original
+ship — no server change needed. The refactor moves the orthogonal
+filters to the client so search + multi-filter combinations don't
+each trigger a round-trip.

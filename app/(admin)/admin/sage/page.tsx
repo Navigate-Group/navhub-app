@@ -18,22 +18,28 @@ const ACTION_LABEL: Record<SageActionType, string> = {
   awareness:          'AWARENESS',
 }
 
-type Filter = 'open' | 'all' | 'critical' | 'warning' | 'positive' | 'dismissed'
+// Status-only pill — severity / type / action filters are separate dropdowns
+// so multiple dimensions can be combined.
+type StatusFilter = 'open' | 'all' | 'acknowledged' | 'resolved' | 'dismissed'
 
-const FILTER_OPTIONS: { value: Filter; label: string }[] = [
-  { value: 'open',      label: 'Open' },
-  { value: 'all',       label: 'All' },
-  { value: 'critical',  label: 'Critical' },
-  { value: 'warning',   label: 'Warnings' },
-  { value: 'positive',  label: 'Positive' },
-  { value: 'dismissed', label: 'Dismissed' },
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'open',         label: 'Open' },
+  { value: 'acknowledged', label: 'Acknowledged' },
+  { value: 'resolved',     label: 'Resolved' },
+  { value: 'dismissed',    label: 'Dismissed' },
+  { value: 'all',          label: 'All' },
 ]
 
 export default function AdminSagePage() {
   const [findings,  setFindings]  = useState<SageFinding[]>([])
   const [scans,     setScans]     = useState<SageScan[]>([])
+  const [groupMap,  setGroupMap]  = useState<Record<string, string>>({})
   const [loading,   setLoading]   = useState(true)
-  const [filter,    setFilter]    = useState<Filter>('open')
+  const [status,    setStatus]    = useState<StatusFilter>('open')
+  const [search,    setSearch]    = useState('')
+  const [severity,  setSeverity]  = useState<string>('all')
+  const [action,    setAction]    = useState<string>('all')
+  const [findType,  setFindType]  = useState<string>('all')
   const [scanOpen,  setScanOpen]  = useState(false)
   const [scanType,  setScanType]  = useState<'adhoc' | 'requested'>('adhoc')
   const [focusArea, setFocusArea] = useState('')
@@ -43,13 +49,14 @@ export default function AdminSagePage() {
 
   function loadAll() {
     setLoading(true)
+    // Always fetch the broadest status set the current filter would allow,
+    // then refine in-memory. Keeps the search + severity + action filters
+    // snappy (no round-trip per keystroke) and the response cacheable.
     const params = new URLSearchParams()
-    if (filter === 'open')      params.set('status', 'new,acknowledged,acting')
-    if (filter === 'all')       params.set('status', 'new,acknowledged,acting,resolved,dismissed')
-    if (filter === 'dismissed') params.set('status', 'dismissed')
-    if (filter === 'critical')  { params.set('status', 'new,acknowledged,acting'); params.set('severity', 'critical') }
-    if (filter === 'warning')   { params.set('status', 'new,acknowledged,acting'); params.set('severity', 'warning')  }
-    if (filter === 'positive')  { params.set('status', 'new,acknowledged,acting'); params.set('severity', 'positive') }
+    if (status === 'open')         params.set('status', 'new,acknowledged,acting')
+    else if (status === 'all')     params.set('status', 'new,acknowledged,acting,resolved,dismissed')
+    else if (status === 'acknowledged') params.set('status', 'acknowledged,acting')
+    else                           params.set('status', status)
 
     Promise.all([
       fetch(`/api/admin/sage/findings?${params.toString()}`).then(r => r.json()),
@@ -61,7 +68,37 @@ export default function AdminSagePage() {
       })
       .finally(() => setLoading(false))
   }
-  useEffect(() => { loadAll() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filter])
+  useEffect(() => { loadAll() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status])
+
+  // Load group id → name map once for resolving affected_groups UUIDs into
+  // friendly names on each finding card.
+  useEffect(() => {
+    fetch('/api/admin/groups')
+      .then(r => r.json())
+      .then((j: { data?: Array<{ id: string; name: string }> }) => {
+        const m: Record<string, string> = {}
+        for (const g of j.data ?? []) m[g.id] = g.name
+        setGroupMap(m)
+      })
+      .catch(() => {})
+  }, [])
+
+  // Client-side refinement on top of the server-side status fetch.
+  const visibleFindings = useMemo(() => {
+    return findings.filter(f => {
+      if (severity !== 'all' && f.severity    !== severity) return false
+      if (action   !== 'all' && f.action_type !== action)   return false
+      if (findType !== 'all' && f.finding_type !== findType) return false
+      if (search.trim()) {
+        const q = search.toLowerCase()
+        const haystack = [
+          f.title, f.observation, f.interpretation, f.recommendation ?? '',
+        ].join(' ').toLowerCase()
+        if (!haystack.includes(q)) return false
+      }
+      return true
+    })
+  }, [findings, severity, action, findType, search])
 
   useEffect(() => {
     if (!toast) return
@@ -185,13 +222,14 @@ export default function AdminSagePage() {
         </div>
       </div>
 
+      {/* Status pills — quick switches between open / resolved etc. */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        {FILTER_OPTIONS.map(opt => (
+        {STATUS_FILTERS.map(opt => (
           <button
             key={opt.value}
-            onClick={() => setFilter(opt.value)}
+            onClick={() => setStatus(opt.value)}
             className={`text-xs px-2.5 py-1 rounded border ${
-              filter === opt.value
+              status === opt.value
                 ? 'border-amber-500 bg-amber-500/10 text-amber-300'
                 : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
             }`}
@@ -201,21 +239,73 @@ export default function AdminSagePage() {
         ))}
       </div>
 
+      {/* Search + multi-filter row — refined client-side over the server fetch */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search title, observation, recommendation…"
+          className="text-xs h-8 px-3 rounded border border-zinc-700 bg-zinc-900 text-zinc-100 w-72"
+        />
+        <select
+          value={severity}
+          onChange={e => setSeverity(e.target.value)}
+          className="text-xs h-8 px-2 rounded border border-zinc-700 bg-zinc-900 text-zinc-100"
+        >
+          <option value="all">All severities</option>
+          <option value="critical">Critical</option>
+          <option value="warning">Warning</option>
+          <option value="info">Info</option>
+          <option value="positive">Positive</option>
+        </select>
+        <select
+          value={action}
+          onChange={e => setAction(e.target.value)}
+          className="text-xs h-8 px-2 rounded border border-zinc-700 bg-zinc-900 text-zinc-100"
+        >
+          <option value="all">All actions</option>
+          <option value="operator_can_act">Operator can act</option>
+          <option value="escalate_to_builder">Escalate to builder</option>
+          <option value="awareness">Awareness</option>
+        </select>
+        <select
+          value={findType}
+          onChange={e => setFindType(e.target.value)}
+          className="text-xs h-8 px-2 rounded border border-zinc-700 bg-zinc-900 text-zinc-100"
+        >
+          <option value="all">All types</option>
+          <option value="performance">Performance</option>
+          <option value="usage">Usage</option>
+          <option value="friction">Friction</option>
+          <option value="health">Health</option>
+          <option value="security">Security</option>
+          <option value="feature">Feature</option>
+          <option value="alert">Alert</option>
+          <option value="suggestion">Suggestion</option>
+        </select>
+        <span className="text-xs text-zinc-500 ml-auto">
+          {visibleFindings.length} of {findings.length} finding{findings.length !== 1 ? 's' : ''}
+          {visibleFindings.length !== findings.length ? ' (filtered)' : ''}
+        </span>
+      </div>
+
       {loading ? (
         <p className="text-sm text-zinc-400">Loading…</p>
-      ) : findings.length === 0 ? (
+      ) : visibleFindings.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-800 p-10 text-center">
           <p className="text-sm text-zinc-400">No findings to show.</p>
           <p className="text-xs text-zinc-500 mt-1">
-            {filter === 'open'
-              ? 'All open findings have been resolved or dismissed.'
-              : 'Try a different filter or run a fresh scan.'}
+            {findings.length === 0
+              ? (status === 'open'
+                  ? 'All open findings have been resolved or dismissed.'
+                  : 'No scans cover this status yet.')
+              : 'Try clearing filters or broadening your search.'}
           </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {findings.map(f => (
-            <FindingCard key={f.id} finding={f} onAction={patchFinding} />
+          {visibleFindings.map(f => (
+            <FindingCard key={f.id} finding={f} groupMap={groupMap} onAction={patchFinding} />
           ))}
         </div>
       )}
@@ -251,13 +341,17 @@ export default function AdminSagePage() {
 }
 
 function FindingCard({
-  finding, onAction,
+  finding, groupMap, onAction,
 }: {
   finding:  SageFinding
+  groupMap: Record<string, string>
   onAction: (id: string, status: SageFindingStatus, dismissedReason?: string) => Promise<void>
 }) {
   const [expanded, setExpanded] = useState(finding.severity === 'critical')
   const sev = SEVERITY_STYLE[finding.severity]
+
+  const affectedGroupNames = (finding.affected_groups ?? [])
+    .map(gid => groupMap[gid] ?? gid.slice(0, 8))
 
   async function copyFinding() {
     const text = [
@@ -300,6 +394,21 @@ function FindingCard({
             )}
           </div>
           <h3 className="text-sm font-semibold text-zinc-100 mt-1.5">{finding.title}</h3>
+          {/* Meta line — timestamp + scan source + affected group names. */}
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-500 flex-wrap">
+            <span>{formatDate(finding.created_at)}</span>
+            <span className="text-zinc-700">·</span>
+            <span className="capitalize">{finding.scan_type} scan</span>
+            {affectedGroupNames.length > 0 && (
+              <>
+                <span className="text-zinc-700">·</span>
+                <span>
+                  {affectedGroupNames.slice(0, 4).join(', ')}
+                  {affectedGroupNames.length > 4 ? ` +${affectedGroupNames.length - 4}` : ''}
+                </span>
+              </>
+            )}
+          </div>
         </div>
         <button
           onClick={() => setExpanded(e => !e)}

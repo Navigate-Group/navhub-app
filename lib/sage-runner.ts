@@ -175,6 +175,30 @@ export function buildSageBrief(data: PlatformData, ctx: SageAnalysisContext): st
   const runs        = data.runs        as Array<{ status?: string; tokens_used?: number; group_id?: string }>
   const errorRuns   = data.errorRuns   as Array<{ id?: string; error_message?: string; group_id?: string }>
   const stuckRuns   = data.stuckRuns   as Array<{ id?: string; group_id?: string; status?: string; started_at?: string }>
+  const groups      = data.groups      as Array<{ id?: string; name?: string }>
+
+  // Build a group-id → name lookup so the prompt can show real names and so
+  // the failure lines below carry the friendly name instead of a raw UUID
+  // prefix (Sage was leaking the UUID into operator-facing findings).
+  const groupName = (id: string | undefined): string => {
+    if (!id) return 'unknown group'
+    const g = groups.find(x => x.id === id)
+    return g?.name ?? `unknown (${id.slice(0, 8)})`
+  }
+
+  // Per-group failure count — surfaces concentration patterns explicitly so
+  // Sage doesn't have to count them itself (and so the clustering rule is
+  // easier to follow).
+  const failuresByGroup = new Map<string, number>()
+  for (const r of errorRuns) {
+    if (!r.group_id) continue
+    failuresByGroup.set(r.group_id, (failuresByGroup.get(r.group_id) ?? 0) + 1)
+  }
+  const failureConcentration = Array.from(failuresByGroup.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([gid, n]) => `- ${groupName(gid)}: ${n} failure${n !== 1 ? 's' : ''}`)
+    .join('\n') || '- None'
 
   const totalRuns   = runs.length
   const successRuns = runs.filter(r => r.status === 'success').length
@@ -184,12 +208,17 @@ export function buildSageBrief(data: PlatformData, ctx: SageAnalysisContext): st
   const periodLabel = ctx.scanType === 'daily' ? '24 hours' : `${Math.round((ctx.periodEnd.getTime() - ctx.periodStart.getTime()) / (24 * 60 * 60 * 1000))} days`
 
   const errorRunLines = errorRuns.slice(0, 10)
-    .map(r => `- Run ${(r.id ?? '').slice(0, 8)}: ${(r.error_message ?? 'no error message').slice(0, 120)} (group: ${(r.group_id ?? '').slice(0, 8)})`)
+    .map(r => `- Run ${(r.id ?? '').slice(0, 8)}: ${(r.error_message ?? 'no error message').slice(0, 120)} — group: ${groupName(r.group_id)}`)
     .join('\n') || '- None'
 
   const stuckLines = stuckRuns
-    .map(r => `- Run ${(r.id ?? '').slice(0, 8)}: ${r.status}, started ${r.started_at} (group: ${(r.group_id ?? '').slice(0, 8)})`)
+    .map(r => `- Run ${(r.id ?? '').slice(0, 8)}: ${r.status}, started ${r.started_at} — group: ${groupName(r.group_id)}`)
     .join('\n') || '- None'
+
+  const groupIdMap = groups
+    .filter(g => g.id && g.name)
+    .map(g => `   ${g.id} = "${g.name}"`)
+    .join('\n') || '   (no groups)'
 
   return `You are performing a ${ctx.scanType} platform analysis for NavHub.
 Period: ${ctx.periodStart.toISOString().slice(0, 10)} to ${ctx.periodEnd.toISOString().slice(0, 10)} (${periodLabel})
@@ -204,41 +233,78 @@ ${ctx.focusArea ? `Focus area: ${ctx.focusArea}` : ''}
 - Currently stuck (>30 min): ${stuckRuns.length}
 - Total tokens used: ${totalTokens.toLocaleString()}
 
-### Failed Runs
+### Failures by group
+${failureConcentration}
+
+### Failed Runs (sample)
 ${errorRunLines}
 
 ### Stuck Runs
 ${stuckLines}
 
 ### Platform Health
-- Groups: ${data.groups.length}
+- Groups: ${groups.length}
 - Stale invites (>7 days pending): ${data.staleInvites.length}
 - Unreviewed user suggestions: ${data.suggestions.length}
 
+### Group ID → name map (use names in findings, never raw IDs)
+${groupIdMap}
+
 ## Your Task
 
-Analyse this data and produce structured findings. Be precise, analytical, and direct.
-Cluster similar issues — report "5 runs hit the same error" rather than 5 separate items.
-Prioritise by impact: critical first, positive findings last.
-Skip findings for things that are working well unless a specific positive is worth highlighting.
+Analyse this data and produce structured findings.
 
-For each finding, output a block in EXACTLY this format:
+CRITICAL RULES (these are non-negotiable — findings that violate them are useless):
+
+1. CLUSTER aggressively. If three runs failed with the same error in the same
+   group, that is ONE finding with affected_count: 3 — not three findings,
+   not the same root cause from three different angles. Look at the
+   "Failures by group" breakdown above before deciding what to report.
+
+2. RESOLVE every group ID to its name. Use the map above. Never leak a raw
+   UUID into a title, observation, interpretation or recommendation. If you
+   reference a group, write its name.
+
+3. TAG actions correctly:
+   - OPERATOR_CAN_ACT: config changes, cancelling stuck runs, adjusting
+     agent settings, reviewing per-agent / per-group setup, raising a tier
+     cap, asking a user a question. Most timeout, stuck-run and config
+     issues live here.
+   - ESCALATE_TO_BUILDER: code changes needed, new feature work,
+     architectural changes, library upgrades.
+   - AWARENESS: informational only, no action required.
+   Default to OPERATOR_CAN_ACT unless the only fix is a code change.
+
+4. INCLUDE at least one POSITIVE finding if any groups are running cleanly
+   (e.g. "Group X completed 12 runs with no failures this period").
+   Operators need to know what's working, not just what's broken.
+
+5. PRIORITISE by impact. One finding describing eight failures outweighs
+   four findings about the same eight failures from different angles.
+
+6. BE SPECIFIC. Use exact numbers, exact group names, name specific agents
+   when the data identifies them, quote the actual error string from the
+   failed runs.
+
+## Output format
+
+Emit each finding as:
 
 ---FINDING---
 type: performance | usage | friction | security | feature | health | suggestion | alert
 severity: critical | warning | info | positive
 action: OPERATOR_CAN_ACT | ESCALATE_TO_BUILDER | AWARENESS
-title: <concise title under 80 chars>
-observation: <factual — what you saw in the data>
+title: <concise title under 80 chars — use group names not IDs>
+observation: <factual — what you saw in the data, with specific numbers>
 interpretation: <analytical — what it means>
 recommendation: <specific actionable next step, or "null" if action is AWARENESS>
 affected_count: <integer count of groups/users/runs affected, or 0>
 ---END_FINDING---
 
-After all findings, end the response with:
+After all findings, end with:
 
 ---SUMMARY---
-<2–3 sentence overall platform health assessment>
+<2–3 sentence overall platform health assessment with key metrics>
 ---END_SUMMARY---
 `
 }
