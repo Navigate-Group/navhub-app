@@ -23,7 +23,7 @@ async function verifyAdminAccess(agentId: string, activeGroupId: string, userId:
     .eq('group_id', activeGroupId)
     .single()
 
-  return membership?.role === 'super_admin' || membership?.role === 'group_admin'
+  return membership?.role === 'super_admin' || membership?.role === 'group_owner' || membership?.role === 'group_admin'
 }
 
 // ── PATCH /api/agents/[id]/credentials/[credId] ───────────────────────────────

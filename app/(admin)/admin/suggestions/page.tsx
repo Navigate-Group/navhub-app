@@ -114,6 +114,50 @@ export default function AdminSuggestionsPage() {
     }
   }
 
+  // Launch a focused Sage scan whose entire brief is this user's feedback.
+  // Useful when triage isn't enough — e.g. the user is reporting a symptom
+  // ("Add Documents button greyed out") and we want Sage to investigate
+  // permissions / recent errors / agent config for that specific user + group.
+  async function submitToSage(s: EnrichedSuggestion) {
+    setBusy(s.id, true)
+    try {
+      const focusArea = [
+        'User feedback investigation:',
+        `User: ${s.submitter_email ?? 'unknown'}`,
+        `Group: ${s.group_name ?? 'unknown'}`,
+        '',
+        `What they were trying to do: ${s.what_trying}`,
+        `What happened: ${s.what_happened}`,
+        `What they wanted: ${s.what_wanted}`,
+        '',
+        'Investigate this specific user experience issue. Look for:',
+        '- Permission configuration issues for this user/group',
+        '- Recent errors or failed runs in this group',
+        '- Agent or document access issues',
+        '- Any platform configuration that could cause this symptom',
+      ].join('\n')
+
+      const res  = await fetch('/api/admin/sage/scan', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          scan_type:   'requested',
+          focus_area:  focusArea,
+          period_days: 30,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Scan failed')
+      setToast('Sage is investigating')
+      // Roll the suggestion to triaged so it doesn't sit in the inbox.
+      await patchStatus(s.id, 'triaged')
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Scan failed')
+    } finally {
+      setBusy(s.id, false)
+    }
+  }
+
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       <div>
@@ -153,6 +197,7 @@ export default function AdminSuggestionsPage() {
               suggestion={s}
               busy={busyIds.has(s.id)}
               onTriage={() => triageWithSage(s.id)}
+              onSubmitToSage={() => submitToSage(s)}
               onAck={() => patchStatus(s.id, 'acknowledged')}
               onActing={() => patchStatus(s.id, 'acting')}
               onDecline={() => patchStatus(s.id, 'declined')}
@@ -181,16 +226,17 @@ export default function AdminSuggestionsPage() {
 }
 
 function SuggestionCard({
-  suggestion, busy, onTriage, onAck, onActing, onDecline, onShipped, onRespond,
+  suggestion, busy, onTriage, onSubmitToSage, onAck, onActing, onDecline, onShipped, onRespond,
 }: {
-  suggestion: EnrichedSuggestion
-  busy:       boolean
-  onTriage:   () => void
-  onAck:      () => void
-  onActing:   () => void
-  onDecline:  () => void
-  onShipped:  () => void
-  onRespond:  () => void
+  suggestion:     EnrichedSuggestion
+  busy:           boolean
+  onTriage:       () => void
+  onSubmitToSage: () => void
+  onAck:          () => void
+  onActing:       () => void
+  onDecline:      () => void
+  onShipped:      () => void
+  onRespond:      () => void
 }) {
   const triage = (suggestion.sage_triage ?? null) as SageTriage | null
   const statusBadge = STATUS_COLOUR[suggestion.status] ?? 'bg-zinc-800 text-zinc-300 border-zinc-700'
@@ -255,6 +301,12 @@ function SuggestionCard({
             className="text-[11px] px-2 py-1 rounded border border-amber-700 text-amber-300 hover:bg-amber-950/30 disabled:opacity-60"
           >Triage with Sage</button>
         )}
+        <button
+          onClick={onSubmitToSage}
+          disabled={busy}
+          title="Run a focused Sage scan using this feedback as the brief"
+          className="text-[11px] px-2 py-1 rounded border border-violet-700 text-violet-300 hover:bg-violet-950/30 disabled:opacity-60"
+        >Submit to Sage</button>
         {suggestion.status !== 'acknowledged' && suggestion.status !== 'shipped' && suggestion.status !== 'declined' && (
           <button
             onClick={onAck}

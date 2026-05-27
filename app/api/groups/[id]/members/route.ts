@@ -9,7 +9,7 @@ import type { GroupMember }  from '@/lib/types'
 // Requires group_admin or super_admin role.
 // super_admin can view any group's members (not limited to activeGroupId).
 
-const ADMIN_ROLES = ['super_admin', 'group_admin']
+const ADMIN_ROLES = ['super_admin', 'group_owner', 'group_admin']
 
 export async function GET(
   _request: Request,

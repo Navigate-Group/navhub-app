@@ -10,7 +10,7 @@ import { Resend }            from 'resend'
  * via Resend. Admin only. Returns { success: true }.
  */
 
-const ADMIN_ROLES   = ['super_admin', 'group_admin']
+const ADMIN_ROLES   = ['super_admin', 'group_owner', 'group_admin']
 const ROLE_LABELS: Record<string, string> = {
   group_admin: 'Group Admin',
   manager:     'Manager',

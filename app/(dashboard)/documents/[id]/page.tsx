@@ -205,7 +205,7 @@ export default function DocumentPage() {
     const [docJson, roleJson] = await Promise.all([docRes.json(), roleRes.json()])
     if (docJson.data) setDoc(docJson.data)
     const role = roleJson.data?.role as string | undefined
-    setIsAdmin(role === 'super_admin' || role === 'group_admin')
+    setIsAdmin(role === 'super_admin' || role === 'group_owner' || role === 'group_admin')
     if (spRes.ok) {
       const spJson = await spRes.json() as { data: { is_active: boolean } | null }
       const connected = !!spJson.data?.is_active

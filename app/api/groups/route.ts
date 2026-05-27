@@ -90,7 +90,7 @@ export async function POST(request: Request) {
     .eq('user_id', session.user.id)
   const memberships = roleRows ?? []
   const isPlatformSuperAdmin = memberships.some(r => r.role === 'super_admin')
-  const hasAnyAdminRole = memberships.some(r => ['super_admin', 'group_admin'].includes(r.role))
+  const hasAnyAdminRole = memberships.some(r => ['super_admin', 'group_owner', 'group_admin'].includes(r.role))
   const isOnboarding = memberships.length === 0
   if (!hasAnyAdminRole && !isOnboarding) {
     return NextResponse.json(
@@ -132,7 +132,9 @@ export async function POST(request: Request) {
   // earlier role-row fetch instead of round-tripping again.
   const isFirstGroup = memberships.length === 0
 
-  // Create group
+  // Create group — record the creator as owner_user_id (migration 062).
+  // Platform super_admins keep their elevated role across tenants; everyone
+  // else becomes the group_owner of the new tenant.
   const { data: group, error: groupError } = await admin
     .from('groups')
     .insert({
@@ -140,6 +142,10 @@ export async function POST(request: Request) {
       slug,
       palette_id:    palette.id,
       primary_color: palette.primary,
+      // Stamp BOTH columns: owner_id (migration 016, used by the admin
+      // Groups page) and owner_user_id (migration 062).
+      owner_id:      session.user.id,
+      owner_user_id: session.user.id,
     })
     .select()
     .single()
@@ -148,13 +154,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: groupError?.message ?? 'Failed to create group' }, { status: 500 })
   }
 
-  // Add creator as group_admin of the new group — or super_admin only when
-  // they already hold platform super_admin elsewhere (so platform admins
-  // keep their privileges across newly created tenants).
   await admin.from('user_groups').insert({
     user_id:    session.user.id,
     group_id:   group.id,
-    role:       isPlatformSuperAdmin ? 'super_admin' : 'group_admin',
+    role:       isPlatformSuperAdmin ? 'super_admin' : 'group_owner',
     is_default: isFirstGroup,
   })
 

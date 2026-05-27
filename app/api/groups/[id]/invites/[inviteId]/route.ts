@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 // ─── DELETE /api/groups/[id]/invites/[inviteId] ───────────────────────────────
 // Cancels a pending invite.
 
-const ADMIN_ROLES = ['super_admin', 'group_admin']
+const ADMIN_ROLES = ['super_admin', 'group_owner', 'group_admin']
 
 export async function DELETE(
   _request: Request,

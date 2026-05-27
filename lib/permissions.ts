@@ -7,7 +7,61 @@ import { createAdminClient } from './supabase/admin'
 import type { AppRole, FeatureKey, AccessLevel, PermissionMatrix } from './types'
 import { FEATURE_KEYS } from './types'
 
-export const ADMIN_ROLES: AppRole[] = ['super_admin', 'group_admin']
+// Roles that bypass the user_permissions matrix entirely — they always get
+// full edit on every feature. Group owners are admins-plus, so they're in
+// here too. Adding 'group_owner' (migration 062) also fixes the issue where
+// admins with no rows in user_permissions saw greyed-out buttons.
+export const ADMIN_ROLES: AppRole[] = ['super_admin', 'group_owner', 'group_admin']
+
+// Role hierarchy for "can X manage Y" decisions. Higher number = more power.
+// super_admin is platform-level (cross-tenant); the other roles are scoped
+// to a single group.
+export const ROLE_RANK: Record<AppRole, number> = {
+  super_admin: 100,
+  group_owner: 80,
+  group_admin: 60,
+  manager:     40,
+  viewer:      20,
+}
+
+/** True if the role is super_admin, group_owner or group_admin. */
+export function isAdminRole(role: string | null | undefined): boolean {
+  return !!role && ADMIN_ROLES.includes(role as AppRole)
+}
+
+/** True if `current` can manage `target` in the same group. */
+export function canManageRole(current: string, target: string): boolean {
+  // Nobody touches super_admins from in-group UI.
+  if (target === 'super_admin') return false
+  // Only super_admins can mint or modify group_owners.
+  if (target === 'group_owner') return current === 'super_admin'
+  // group_admins can only be modified by super_admin or group_owner.
+  if (target === 'group_admin') return current === 'super_admin' || current === 'group_owner'
+  // Otherwise compare ranks.
+  const cur = ROLE_RANK[current as AppRole] ?? 0
+  const tgt = ROLE_RANK[target as AppRole] ?? 0
+  return cur > tgt
+}
+
+/** True if `current` can assign `newRole` to anyone. */
+export function canAssignRole(current: string, newRole: string): boolean {
+  if (newRole === 'super_admin') return current === 'super_admin'
+  if (newRole === 'group_owner') return current === 'super_admin'
+  if (newRole === 'group_admin') return current === 'super_admin' || current === 'group_owner'
+  return isAdminRole(current)
+}
+
+/** Single-call gate used by feature components — covers the admin-bypass case. */
+export function hasAccess(
+  role:     string | null | undefined,
+  access:   AccessLevel | null | undefined,
+  required: 'view' | 'edit',
+): boolean {
+  if (isAdminRole(role)) return true
+  if (!access) return false
+  if (required === 'view') return access === 'view' || access === 'edit'
+  return access === 'edit'
+}
 
 /** Build empty matrix with 'none' defaults */
 function emptyMatrix(): PermissionMatrix {
@@ -75,7 +129,7 @@ export function canEdit(matrix: PermissionMatrix, feature: FeatureKey, companyId
 }
 
 export function canAccessSettings(role: AppRole): boolean {
-  return role === 'super_admin' || role === 'group_admin'
+  return isAdminRole(role)
 }
 
 /** Which features can the user see at all (has view or edit on at least one company or default) */

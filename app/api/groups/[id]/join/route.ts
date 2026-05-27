@@ -2,7 +2,7 @@ import { NextResponse }      from 'next/server'
 import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const VALID_ROLES = ['super_admin', 'group_admin', 'manager', 'viewer']
+const VALID_ROLES = ['super_admin', 'group_owner', 'group_admin', 'manager', 'viewer']
 
 // ─── POST /api/groups/[id]/join ───────────────────────────────────────────────
 // Called from /auth/accept-invite after the user has set their password.

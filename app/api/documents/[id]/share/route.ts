@@ -12,7 +12,7 @@ async function verifyAdminAccess(session: { user: { id: string } }, activeGroupI
     .eq('user_id', session.user.id)
     .eq('group_id', activeGroupId)
     .single()
-  return data?.role === 'super_admin' || data?.role === 'group_admin'
+  return data?.role === 'super_admin' || data?.role === 'group_owner' || data?.role === 'group_admin'
 }
 
 // ─── GET — share status ─────────────────────────────────────────────────────

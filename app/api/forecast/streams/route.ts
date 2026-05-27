@@ -11,7 +11,7 @@ import type { ForecastStream } from '@/lib/types'
 // Creates a new stream. Requires group_admin or super_admin role.
 // Body: { name, tag, color, y1_baseline, default_growth_rate, default_gp_margin }
 
-const ADMIN_ROLES = ['super_admin', 'group_admin']
+const ADMIN_ROLES = ['super_admin', 'group_owner', 'group_admin']
 
 async function getSessionAndGroup() {
   const supabase      = createClient()

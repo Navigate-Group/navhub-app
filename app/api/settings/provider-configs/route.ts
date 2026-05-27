@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     .eq('user_id', session.user.id)
     .eq('group_id', activeGroupId)
     .single()
-  if (!membership || !['super_admin', 'group_admin'].includes(membership.role)) {
+  if (!membership || !['super_admin', 'group_owner', 'group_admin'].includes(membership.role)) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
   }
 

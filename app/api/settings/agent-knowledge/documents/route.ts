@@ -21,7 +21,7 @@ async function adminGuard(supabase: ReturnType<typeof createClient>, userId: str
     .eq('user_id', userId)
     .eq('group_id', groupId)
     .single()
-  return !!membership && ['super_admin', 'group_admin'].includes(membership.role)
+  return !!membership && ['super_admin', 'group_owner', 'group_admin'].includes(membership.role)
 }
 
 export async function POST(req: Request) {

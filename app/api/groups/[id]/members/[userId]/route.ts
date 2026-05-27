@@ -1,19 +1,22 @@
-import { NextResponse }      from 'next/server'
-import { cookies }           from 'next/headers'
-import { createClient }      from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { NextResponse }                      from 'next/server'
+import { cookies }                           from 'next/headers'
+import { createClient }                      from '@/lib/supabase/server'
+import { createAdminClient }                 from '@/lib/supabase/admin'
+import { canManageRole, canAssignRole }      from '@/lib/permissions'
 
 // ─── PATCH /api/groups/[id]/members/[userId] ─────────────────────────────────
 // Updates a member's role.
 // Body: { role: string }
-// Cannot demote the last super_admin.
+// Cannot demote the last super_admin. Enforces the role hierarchy server-side:
+//   • super_admin: can manage anyone except other super_admins
+//   • group_owner: can manage group_admin and below; cannot mint another owner
+//   • group_admin: can manage manager / viewer only
 //
 // ─── DELETE /api/groups/[id]/members/[userId] ────────────────────────────────
-// Removes a member from the group.
-// Cannot remove the last super_admin.
+// Removes a member from the group. Same hierarchy + last-super-admin guard.
 
-const ADMIN_ROLES   = ['super_admin', 'group_admin']
-const ALLOWED_ROLES = ['super_admin', 'group_admin', 'manager', 'viewer']
+const ADMIN_ROLES   = ['super_admin', 'group_owner', 'group_admin']
+const ALLOWED_ROLES = ['super_admin', 'group_owner', 'group_admin', 'manager', 'viewer']
 
 type Params = { params: { id: string; userId: string } }
 
@@ -65,7 +68,7 @@ export async function PATCH(request: Request, { params }: Params) {
   const access = await verifyAdminAccess(params.id, session.user.id, activeGroupId)
   if (access.status === 'not_found') return NextResponse.json({ error: 'Group not found' },     { status: 404 })
   if (access.status === 'forbidden') return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
-  const callerIsSuper = access.role === 'super_admin'
+  const callerRole = access.role
 
   let body: Record<string, unknown>
   try { body = await request.json() }
@@ -76,13 +79,23 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: `role must be one of: ${ALLOWED_ROLES.join(', ')}` }, { status: 422 })
   }
 
-  // Super-admin protection: only super_admins can mint or modify super_admins.
-  // Group admins must never be able to assign super_admin or change a
-  // super_admin's role even with a forged request.
+  // Role-hierarchy enforcement (migration 062). Three guards:
+  //   1. Caller must be allowed to manage the target's current role.
+  //   2. Caller must be allowed to assign the requested new role.
+  //   3. Last super_admin cannot be demoted (separate check below).
   const targetRole = await getTargetRole(params.id, params.userId)
-  if (!callerIsSuper && (newRole === 'super_admin' || targetRole === 'super_admin')) {
+  if (!targetRole) {
+    return NextResponse.json({ error: 'Target member not found in this group.' }, { status: 404 })
+  }
+  if (!canManageRole(callerRole, targetRole)) {
     return NextResponse.json(
-      { error: 'Only super admins can assign or modify the super admin role.' },
+      { error: `Your role (${callerRole}) cannot modify a ${targetRole}.` },
+      { status: 403 },
+    )
+  }
+  if (!canAssignRole(callerRole, newRole)) {
+    return NextResponse.json(
+      { error: `Your role (${callerRole}) cannot assign the ${newRole} role.` },
       { status: 403 },
     )
   }
@@ -121,13 +134,17 @@ export async function DELETE(_request: Request, { params }: Params) {
   const access = await verifyAdminAccess(params.id, session.user.id, activeGroupId)
   if (access.status === 'not_found') return NextResponse.json({ error: 'Group not found' },     { status: 404 })
   if (access.status === 'forbidden') return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
-  const callerIsSuper = access.role === 'super_admin'
+  const callerRole = access.role
 
-  // Group admins can't remove super_admins.
+  // Same hierarchy gate as PATCH — only callers with sufficient rank can
+  // remove a member at the target rank.
   const targetRole = await getTargetRole(params.id, params.userId)
-  if (!callerIsSuper && targetRole === 'super_admin') {
+  if (!targetRole) {
+    return NextResponse.json({ error: 'Target member not found in this group.' }, { status: 404 })
+  }
+  if (!canManageRole(callerRole, targetRole)) {
     return NextResponse.json(
-      { error: 'Only super admins can remove a super admin.' },
+      { error: `Your role (${callerRole}) cannot remove a ${targetRole}.` },
       { status: 403 },
     )
   }

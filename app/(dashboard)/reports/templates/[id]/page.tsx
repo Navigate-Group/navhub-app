@@ -197,7 +197,7 @@ export default function TemplateDetailPage() {
       if (!tmplRes.ok) throw new Error(tmplJson.error ?? 'Not found')
       setTemplate(tmplJson.data)
       const role = groupJson.data?.role
-      setIsAdmin(role === 'super_admin' || role === 'group_admin')
+      setIsAdmin(role === 'super_admin' || role === 'group_owner' || role === 'group_admin')
       setIsSuperAdmin(role === 'super_admin')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')

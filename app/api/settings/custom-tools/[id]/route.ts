@@ -10,7 +10,7 @@ async function verifyAdminAccess(supabase: ReturnType<typeof createClient>, user
     .eq('user_id', userId)
     .eq('group_id', groupId)
     .single()
-  return data && ['super_admin', 'group_admin'].includes(data.role)
+  return data && ['super_admin', 'group_owner', 'group_admin'].includes(data.role)
 }
 
 // ─── PATCH — update a custom tool ──────────────────────────────────────────

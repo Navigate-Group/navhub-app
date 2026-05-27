@@ -269,7 +269,7 @@ export default function DocumentsPage() {
       setFolders(foldersJson.data ?? [])
       setCompanies((companiesJson.data ?? []).filter((c: Company) => c.is_active))
       const role = roleJson.data?.role as string | undefined
-      setIsAdmin(role === 'super_admin' || role === 'group_admin')
+      setIsAdmin(role === 'super_admin' || role === 'group_owner' || role === 'group_admin')
       setAllTags(tagsJson.data ?? [])
     } finally {
       setLoading(false)

@@ -5,7 +5,7 @@ import { createAdminClient }  from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 
-const ADMIN_ROLES = ['super_admin', 'group_admin']
+const ADMIN_ROLES = ['super_admin', 'group_owner', 'group_admin']
 
 async function verifyGroupAdmin(userId: string, groupId: string): Promise<boolean> {
   const admin = createAdminClient()

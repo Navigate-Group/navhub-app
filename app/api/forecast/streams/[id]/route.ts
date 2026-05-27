@@ -11,7 +11,7 @@ import type { ForecastStream } from '@/lib/types'
 // ─── DELETE /api/forecast/streams/[id] ───────────────────────────────────────
 // Soft-deletes a stream (sets is_active = false).
 
-const ADMIN_ROLES = ['super_admin', 'group_admin']
+const ADMIN_ROLES = ['super_admin', 'group_owner', 'group_admin']
 
 async function getContext(id: string) {
   const supabase    = createClient()

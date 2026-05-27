@@ -170,7 +170,7 @@ export async function middleware(request: NextRequest) {
       .single()
 
     const role = roleRow?.role ?? 'viewer'
-    const adminRoles = ['super_admin', 'group_admin']
+    const adminRoles = ['super_admin', 'group_owner', 'group_admin']
     if (!adminRoles.includes(role)) {
       const { data: perms } = await supabase
         .from('user_permissions')

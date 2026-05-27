@@ -26,7 +26,7 @@ async function verifyAdminAccess(agentId: string, activeGroupId: string, userId:
     .eq('group_id', activeGroupId)
     .single()
 
-  const isAdmin = membership?.role === 'super_admin' || membership?.role === 'group_admin'
+  const isAdmin = membership?.role === 'super_admin' || membership?.role === 'group_owner' || membership?.role === 'group_admin'
   return isAdmin ? agent : null
 }
 

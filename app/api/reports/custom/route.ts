@@ -4,7 +4,7 @@ import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { CustomReport } from '@/lib/types'
 
-const ADMIN_ROLES = ['super_admin', 'group_admin']
+const ADMIN_ROLES = ['super_admin', 'group_owner', 'group_admin']
 const MAX_SIZE_BYTES = 5 * 1024 * 1024  // 5 MB
 
 // ─── GET /api/reports/custom ──────────────────────────────────────────────────

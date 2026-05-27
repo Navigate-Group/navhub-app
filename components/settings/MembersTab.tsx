@@ -1,18 +1,19 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Users, ChevronDown, Check, Mail, Shield } from 'lucide-react'
+import { Users, ChevronDown, Check, Mail, Shield, Crown } from 'lucide-react'
 import { Button }   from '@/components/ui/button'
 import { Input }    from '@/components/ui/input'
 import { Badge }    from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { cn }       from '@/lib/utils'
 import type { GroupMember, GroupInvite, AppRole } from '@/lib/types'
-import { ADMIN_ROLES } from '@/lib/permissions'
+import { ADMIN_ROLES, canManageRole, canAssignRole } from '@/lib/permissions'
 import PermissionsModal from './PermissionsModal'
 
 const ROLE_OPTIONS = [
   { value: 'super_admin', label: 'Super Admin' },
+  { value: 'group_owner', label: 'Owner'       },
   { value: 'group_admin', label: 'Group Admin' },
   { value: 'manager',     label: 'Manager'     },
   { value: 'viewer',      label: 'Viewer'      },
@@ -20,12 +21,20 @@ const ROLE_OPTIONS = [
 
 const ROLE_DISPLAY: Record<string, string> = {
   super_admin: 'Super Admin',
+  group_owner: 'Owner',
   group_admin: 'Group Admin',
   manager:     'Manager',
   viewer:      'Viewer',
   // Legacy role labels for backwards compat display
   company_viewer:  'Viewer',
   division_viewer: 'Viewer',
+}
+
+// Roles the current user can assign in the dropdown — filters the global
+// ROLE_OPTIONS down to what canAssignRole() allows. Drives both the invite
+// form's role select and the per-member role select.
+function assignableRoleOptions(currentRole: string) {
+  return ROLE_OPTIONS.filter(r => canAssignRole(currentRole, r.value))
 }
 
 interface MembersTabProps {
@@ -247,9 +256,13 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
                 onChange={e => setInviteRole(e.target.value)}
                 className="appearance-none h-9 rounded-md border border-input bg-background pl-2 pr-7 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
-                {ROLE_OPTIONS.filter(r => r.value !== 'super_admin').map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
+                {/* Invite form: never offer super_admin or group_owner here. Owners
+                    are minted by direct PATCH on the members route (super_admin only). */}
+                {ROLE_OPTIONS
+                  .filter(r => r.value !== 'super_admin' && r.value !== 'group_owner')
+                  .map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-1.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             </div>
@@ -309,10 +322,18 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
                       </Badge>
                     )}
 
-                    {/* Role selector — disabled for self, hidden for super_admin
-                         members. Group admins never see super_admin as an option;
-                         only super_admin callers can set/keep that role. */}
-                    {!isYou && member.role !== 'super_admin' && (
+                    {/* Owner badge — non-editable for everyone except super_admin */}
+                    {member.role === 'group_owner' && (
+                      <Badge className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border-0">
+                        <Crown className="h-3 w-3 mr-1" /> Owner
+                      </Badge>
+                    )}
+
+                    {/* Role selector — only rendered when the caller is allowed to
+                         manage this member. canManageRole encodes the full hierarchy:
+                         super_admin → anyone except other super_admins; group_owner →
+                         group_admin and below; group_admin → manager / viewer only. */}
+                    {!isYou && canManageRole(callerRole, member.role) && (
                       <div className="relative">
                         <select
                           value={member.role}
@@ -320,11 +341,17 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
                           onChange={e => void handleRoleChange(member.user_id, e.target.value)}
                           className="appearance-none h-8 rounded-md border border-input bg-background pl-2 pr-7 text-xs text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
                         >
-                          {ROLE_OPTIONS
-                            .filter(opt => opt.value !== 'super_admin' || callerRole === 'super_admin')
-                            .map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
+                          {/* Always include the member's current role so it stays
+                              selected even if the caller can't reassign to it. Plus
+                              every role the caller is allowed to assign. */}
+                          {Array.from(new Set([
+                            member.role,
+                            ...assignableRoleOptions(callerRole).map(o => o.value),
+                          ])).map(value => (
+                            <option key={value} value={value}>
+                              {ROLE_DISPLAY[value] ?? value}
+                            </option>
+                          ))}
                         </select>
                         <ChevronDown className="pointer-events-none absolute right-1.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
                       </div>
@@ -342,9 +369,8 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
                       </Button>
                     )}
 
-                    {/* Remove — disabled for self, and for super_admins unless
-                         the caller is also a super_admin. */}
-                    {!isYou && (member.role !== 'super_admin' || callerRole === 'super_admin') && (
+                    {/* Remove — same hierarchy gate as the role selector. */}
+                    {!isYou && canManageRole(callerRole, member.role) && (
                       deleteConfirm === member.user_id ? (
                         <span className="flex items-center gap-1 text-xs">
                           <Button

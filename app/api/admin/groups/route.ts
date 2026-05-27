@@ -122,11 +122,13 @@ export async function POST(req: Request) {
 
   if (groupErr) return NextResponse.json({ error: groupErr.message }, { status: 500 })
 
-  // Add owner as group_admin
+  // Add owner as group_owner of the new group (migration 062).
+  // Also stamp owner_user_id on the groups row for ownership lookups.
+  void admin.from('groups').update({ owner_user_id: ownerId }).eq('id', group.id)
   const { error: memberErr } = await admin.from('user_groups').insert({
     user_id:    ownerId,
     group_id:   group.id,
-    role:       'group_admin',
+    role:       'group_owner',
     is_default: true,
   })
   if (memberErr) return NextResponse.json({ error: memberErr.message }, { status: 500 })

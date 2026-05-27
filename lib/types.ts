@@ -2,10 +2,10 @@
 // Enums / unions
 // ============================================================
 
-export type UserRole = 'super_admin' | 'group_admin' | 'manager' | 'viewer'
+export type UserRole = 'super_admin' | 'group_owner' | 'group_admin' | 'manager' | 'viewer'
 
-// ── Role & Permission types (migration 031) ──
-export type AppRole     = 'super_admin' | 'group_admin' | 'manager' | 'viewer'
+// ── Role & Permission types (migration 031, group_owner added in 062) ──
+export type AppRole     = 'super_admin' | 'group_owner' | 'group_admin' | 'manager' | 'viewer'
 export type FeatureKey  = 'financials' | 'reports' | 'documents' | 'marketing' | 'agents' | 'settings'
 export type AccessLevel = 'none' | 'view' | 'edit'
 
@@ -31,6 +31,7 @@ export const FEATURE_DESCRIPTIONS: Record<FeatureKey, string> = {
 
 export const ROLE_LABELS: Record<AppRole, string> = {
   super_admin: 'Super Admin',
+  group_owner: 'Owner',
   group_admin: 'Group Admin',
   manager:     'Manager',
   viewer:      'Viewer',
@@ -63,6 +64,9 @@ export interface Group {
   // Maximum task complexity tier the group's users can pick on the run
   // launcher. Defaults to 'massive' (migration 054).
   max_task_complexity?: TaskComplexity
+  // Group ownership (migration 062). The owner can manage group_admin
+  // assignments; only super_admins can mint group_owners.
+  owner_user_id?: string | null
   created_at:    string
 }
 

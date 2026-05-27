@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { Search } from 'lucide-react'
 import type {
   SageFinding, SageScan, SageSeverity, SageFindingStatus, SageActionType,
 } from '@/lib/types'
@@ -46,6 +47,39 @@ export default function AdminSagePage() {
   const [periodDays, setPeriodDays] = useState(7)
   const [scanBusy,  setScanBusy]  = useState(false)
   const [toast,     setToast]     = useState<string | null>(null)
+
+  // Operator-driven investigation card — surfaced at the top of the page so
+  // ops can submit a specific symptom for Sage to investigate without going
+  // through the suggestions inbox first.
+  const [investigationOpen, setInvestigationOpen]   = useState(false)
+  const [investigationBrief, setInvestigationBrief] = useState('')
+  const [investigationBusy,  setInvestigationBusy]  = useState(false)
+
+  async function handleRunInvestigation() {
+    if (!investigationBrief.trim()) return
+    setInvestigationBusy(true)
+    try {
+      const res  = await fetch('/api/admin/sage/scan', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          scan_type:   'requested',
+          focus_area:  investigationBrief.trim(),
+          period_days: 30,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Scan failed')
+      setToast('Investigation started')
+      setInvestigationOpen(false)
+      setInvestigationBrief('')
+      loadAll()
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Scan failed')
+    } finally {
+      setInvestigationBusy(false)
+    }
+  }
 
   function loadAll() {
     setLoading(true)
@@ -159,6 +193,13 @@ export default function AdminSagePage() {
               : 'No scans yet — run one to see findings.'}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <button
+          onClick={() => setInvestigationOpen(o => !o)}
+          className="text-xs px-3 py-1.5 rounded border border-violet-700 text-violet-300 hover:bg-violet-950/30 inline-flex items-center gap-1.5"
+        >
+          <Search className="h-3.5 w-3.5" /> Submit issue for investigation
+        </button>
         <div className="relative">
           <button
             onClick={() => setScanOpen(o => !o)}
@@ -220,7 +261,40 @@ export default function AdminSagePage() {
             </div>
           )}
         </div>
+        </div>
       </div>
+
+      {/* Operator-driven investigation form — when the operator wants to
+          submit a specific symptom or question for Sage to investigate. */}
+      {investigationOpen && (
+        <div className="border border-violet-800 rounded-lg p-4 space-y-3 bg-violet-950/20">
+          <div>
+            <p className="text-sm font-semibold text-violet-200">Submit issue to Sage</p>
+            <p className="text-[11px] text-violet-300/70 mt-0.5">
+              Describe a specific symptom or question. Sage will run a focused 30-day investigation.
+            </p>
+          </div>
+          <textarea
+            value={investigationBrief}
+            onChange={e => setInvestigationBrief(e.target.value)}
+            placeholder="e.g. User mark@axistech.co in AxisTech Rural cannot add documents. Add Documents button is greyed out despite being a group admin."
+            rows={4}
+            className="w-full px-3 py-2 rounded border border-zinc-700 bg-zinc-950 text-zinc-100 text-xs"
+          />
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => { setInvestigationOpen(false); setInvestigationBrief('') }}
+              disabled={investigationBusy}
+              className="text-xs px-3 py-1.5 rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+            >Cancel</button>
+            <button
+              onClick={handleRunInvestigation}
+              disabled={investigationBusy || !investigationBrief.trim()}
+              className="text-xs px-3 py-1.5 rounded bg-violet-500 text-zinc-950 font-semibold hover:bg-violet-400 disabled:opacity-60"
+            >{investigationBusy ? 'Investigating…' : 'Investigate with Sage'}</button>
+          </div>
+        </div>
+      )}
 
       {/* Status pills — quick switches between open / resolved etc. */}
       <div className="flex items-center gap-1.5 flex-wrap">

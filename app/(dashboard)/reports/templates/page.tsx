@@ -51,7 +51,7 @@ export default function TemplatesPage() {
         if (tmplJson.error) throw new Error(tmplJson.error)
         setTemplates(tmplJson.data ?? [])
         const role = groupJson.data?.role
-        setIsAdmin(role === 'super_admin' || role === 'group_admin')
+        setIsAdmin(role === 'super_admin' || role === 'group_owner' || role === 'group_admin')
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))

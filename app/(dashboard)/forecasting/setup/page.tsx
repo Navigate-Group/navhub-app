@@ -62,7 +62,7 @@ export default function StreamSetupPage() {
     ]).then(([streamsJson, groupJson, prefsJson]) => {
       setStreams(streamsJson.data ?? [])
       const role = groupJson.data?.role ?? ''
-      setIsAdmin(role === 'super_admin' || role === 'group_admin')
+      setIsAdmin(role === 'super_admin' || role === 'group_owner' || role === 'group_admin')
       if (prefsJson.data) setPrefs(prefsJson.data)
     }).finally(() => setLoading(false))
   }, [])

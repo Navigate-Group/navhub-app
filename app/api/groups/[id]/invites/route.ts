@@ -15,7 +15,7 @@ function getResend() {
 //   • Existing  → Resend notification + immediately adds to group
 // Body: { email: string, role: string }
 
-const ADMIN_ROLES     = ['super_admin', 'group_admin']
+const ADMIN_ROLES     = ['super_admin', 'group_owner', 'group_admin']
 const INVITABLE_ROLES = ['group_admin', 'manager', 'viewer']
 
 export async function GET(

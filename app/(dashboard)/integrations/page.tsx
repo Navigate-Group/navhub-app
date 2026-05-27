@@ -542,7 +542,7 @@ export default function IntegrationsPage() {
     } finally { setSavingChannel(false) }
   }
 
-  const isAdmin        = role === 'super_admin' || role === 'group_admin'
+  const isAdmin        = role === 'super_admin' || role === 'group_owner' || role === 'group_admin'
   const showFinancials = isAdmin || visible.includes('financials')
   const showMarketing  = isAdmin || visible.includes('marketing')
   const showDocuments  = isAdmin || visible.includes('documents') || visible.includes('reports')

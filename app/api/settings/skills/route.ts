@@ -5,7 +5,7 @@ import { createAdminClient }  from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 
-const ADMIN_ROLES = ['super_admin', 'group_admin']
+const ADMIN_ROLES = ['super_admin', 'group_owner', 'group_admin']
 
 function slugify(input: string): string {
   return input

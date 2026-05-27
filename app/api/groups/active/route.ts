@@ -36,7 +36,7 @@ export async function GET() {
     .eq('group_id', activeGroupId)
     .single()
 
-  const adminRoles = ['super_admin', 'group_admin']
+  const adminRoles = ['super_admin', 'group_owner', 'group_admin']
   const isAdmin    = !!membership && adminRoles.includes(membership.role)
 
   // Pull a display name for the dashboard greeting from user_metadata

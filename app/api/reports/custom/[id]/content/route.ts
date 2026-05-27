@@ -3,7 +3,7 @@ import { cookies }           from 'next/headers'
 import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const ADMIN_ROLES = ['super_admin', 'group_admin']
+const ADMIN_ROLES = ['super_admin', 'group_owner', 'group_admin']
 
 // ─── PATCH /api/reports/custom/[id]/content ───────────────────────────────────
 // Overwrites the report's HTML file in Supabase Storage with the modified content.

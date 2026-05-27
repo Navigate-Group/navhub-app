@@ -91,7 +91,7 @@ export default function TemplateHealthPage() {
         if (roleRes.ok) {
           const roleJson = await roleRes.json()
           const role = roleJson.data?.role as string | undefined
-          if (role !== 'super_admin' && role !== 'group_admin') {
+          if (role !== 'super_admin' && role !== 'group_owner' && role !== 'group_admin') {
             setError('Admin access required.')
             setLoading(false)
             return

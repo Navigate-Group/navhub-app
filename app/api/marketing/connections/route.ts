@@ -55,7 +55,7 @@ export async function DELETE(req: NextRequest) {
     .eq('group_id', activeGroupId)
     .eq('user_id', session.user.id)
     .single()
-  if (!membership || !['super_admin', 'group_admin'].includes(membership.role)) {
+  if (!membership || !['super_admin', 'group_owner', 'group_admin'].includes(membership.role)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

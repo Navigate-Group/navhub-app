@@ -35,7 +35,7 @@ export async function PATCH(request: Request, { params }: Params) {
     .eq('group_id', params.id)
     .single()
 
-  const adminRoles = ['super_admin', 'group_admin']
+  const adminRoles = ['super_admin', 'group_owner', 'group_admin']
   if (!membership || !adminRoles.includes(membership.role)) {
     return NextResponse.json({ error: 'Forbidden — group admin required' }, { status: 403 })
   }

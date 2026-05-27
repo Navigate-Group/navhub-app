@@ -44,7 +44,7 @@ export async function PATCH(req: Request) {
     .eq('user_id', session.user.id)
     .eq('group_id', activeGroupId)
     .single()
-  const isAdmin = membership?.role === 'super_admin' || membership?.role === 'group_admin'
+  const isAdmin = membership?.role === 'super_admin' || membership?.role === 'group_owner' || membership?.role === 'group_admin'
   if (!isAdmin) return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
 
   const body = await req.json() as { default_channel?: string | null }
@@ -83,7 +83,7 @@ export async function DELETE() {
     .eq('user_id', session.user.id)
     .eq('group_id', activeGroupId)
     .single()
-  const isAdmin = membership?.role === 'super_admin' || membership?.role === 'group_admin'
+  const isAdmin = membership?.role === 'super_admin' || membership?.role === 'group_owner' || membership?.role === 'group_admin'
   if (!isAdmin) return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
 
   const admin = createAdminClient()
