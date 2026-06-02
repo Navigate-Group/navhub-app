@@ -5151,27 +5151,33 @@ queries `user_groups` for any row with `role='super_admin'`).
   the source of truth).
 
 ### Admin review surface
-- **`/admin/suggestions`** — full review page. Filter pills (Open /
-  Submitted / Triaged / Acknowledged / Declined / Shipped / All).
+- **`/admin/suggestions`** — full review page showing all three feedback
+  sources: user_suggestions (Feedback), support_requests (Support Request),
+  and feature_suggestions (Feature Suggestion). Each item displays a type
+  badge to distinguish the source.
+  Filter pills (Open / Submitted / Triaged / Acknowledged / Declined / Shipped / All).
   Per-card actions: Triage with Sage · Acknowledge · Acting · Shipped ·
-  Decline · Send response. Each card shows submitter email, group
-  name, the three feedback fields, the operator note (if any), and
-  Sage's triage block when present (disposition, reasoning, suggested
-  user response).
+  Decline · Send response. Each card shows type badge, status badge,
+  submitter email, group name, the three feedback fields, the operator
+  note (if any), and Sage's triage block when present (disposition,
+  reasoning, suggested user response).
 - Send-response modal pre-fills the textarea with Sage's
   `user_response` draft and lets the operator pick the resulting
   status (acknowledged / declined / shipped) before sending.
 
 ### Admin APIs
 ```
-GET    /api/admin/suggestions                   → list + unread_count
-PATCH  /api/admin/suggestions/[id]              → status / operator_note
-POST   /api/admin/suggestions/[id]/triage       → Claude Haiku triage → sage_triage JSONB
-POST   /api/admin/suggestions/[id]/notify       → Resend email + bump status + record user_notified_at
+GET    /api/admin/suggestions                   → UNION of user_suggestions, support_requests, feature_suggestions + unread_count
+PATCH  /api/admin/suggestions/[id]              → status / operator_note (user_suggestions only)
+POST   /api/admin/suggestions/[id]/triage       → Claude Haiku triage → sage_triage JSONB (user_suggestions only)
+POST   /api/admin/suggestions/[id]/notify       → Resend email + bump status + record user_notified_at (user_suggestions only)
 ```
-All super_admin-gated via `verifySuperAdmin`. The list endpoint always
-returns a fresh `unread_count` (count of `submitted` rows, independent
-of the filter param) so the sidebar badge stays accurate.
+All super_admin-gated via `verifySuperAdmin`. The list endpoint queries
+all three tables, normalizes them with a computed `type` field (feedback,
+support_request, feature_suggestion), and returns them sorted by created_at.
+The `unread_count` sums new/open items across all three tables:
+user_suggestions (status=submitted) + support_requests (status=open) +
+feature_suggestions (status=new).
 
 ### Sage triage
 Uses **Claude Haiku 4.5** (fast + cheap — triage is a classification
