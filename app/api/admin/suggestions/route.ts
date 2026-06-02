@@ -15,7 +15,8 @@ async function verifySuperAdmin(userId: string): Promise<boolean> {
 }
 
 // ── GET /api/admin/suggestions ──────────────────────────────────────────────
-// Lists all user_suggestions with submitter email + group name resolved.
+// Lists all feedback from three sources: user_suggestions, support_requests,
+// and feature_suggestions. Unifies them into a common shape with a `type` field.
 // Supports `status` filter (comma-separated; default = open statuses).
 //
 // Response also includes `unread_count` — count of `submitted` rows the
@@ -36,13 +37,89 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient()
 
-  const { data: suggestions, error } = await admin
-    .from('user_suggestions')
-    .select('*')
-    .in('status', statuses)
-    .order('created_at', { ascending: false })
-    .limit(200)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  // Query all three feedback tables in parallel
+  const [userSuggestionsResult, supportRequestsResult, featureSuggestionsResult] = await Promise.all([
+    // 1. user_suggestions (existing table)
+    admin
+      .from('user_suggestions')
+      .select('*')
+      .in('status', statuses)
+      .order('created_at', { ascending: false })
+      .limit(100),
+
+    // 2. support_requests
+    admin
+      .from('support_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100),
+
+    // 3. feature_suggestions
+    admin
+      .from('feature_suggestions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100),
+  ])
+
+  if (userSuggestionsResult.error && supportRequestsResult.error && featureSuggestionsResult.error) {
+    return NextResponse.json({ error: 'Failed to fetch feedback' }, { status: 500 })
+  }
+
+  // Normalize all three tables to a common shape with type discriminator
+  const userSuggestions = ((userSuggestionsResult.data ?? []) as Record<string, unknown>[]).map(s => ({
+    ...s,
+    type: 'feedback' as const,
+    // Already has: id, group_id, submitted_by (user_id), what_trying, what_happened, what_wanted, status, created_at, etc.
+  }))
+
+  const supportRequests = ((supportRequestsResult.data ?? []) as Record<string, unknown>[]).map(s => ({
+    id: s.id,
+    type: 'support_request' as const,
+    group_id: s.group_id,
+    submitted_by: s.user_id, // Normalize user_id -> submitted_by
+    what_trying: 'N/A',
+    what_happened: s.message ?? '',
+    what_wanted: 'Support assistance',
+    status: s.status ?? 'open',
+    created_at: s.created_at,
+    category: null,
+    sage_triage: null,
+    operator_note: null,
+    user_notified_at: null,
+    sage_finding_id: null,
+    // Store original email for display
+    _original_email: s.email,
+  }))
+
+  const featureSuggestions = ((featureSuggestionsResult.data ?? []) as Record<string, unknown>[]).map(s => ({
+    id: s.id,
+    type: 'feature_suggestion' as const,
+    group_id: s.group_id,
+    submitted_by: s.user_id, // Normalize user_id -> submitted_by
+    what_trying: 'Suggesting a feature',
+    what_happened: 'N/A',
+    what_wanted: s.suggestion ?? '',
+    status: s.status ?? 'new',
+    created_at: s.created_at,
+    category: null,
+    sage_triage: null,
+    operator_note: null,
+    user_notified_at: null,
+    sage_finding_id: null,
+    // Store original email for display
+    _original_email: s.email,
+  }))
+
+  // Combine and sort by created_at
+  const allFeedback = [...userSuggestions, ...supportRequests, ...featureSuggestions]
+  allFeedback.sort((a, b) => {
+    const timeA = new Date(a.created_at as string).getTime()
+    const timeB = new Date(b.created_at as string).getTime()
+    return timeB - timeA // newest first
+  })
+
+  const suggestions = allFeedback.slice(0, 200) as Record<string, unknown>[]
 
   // Resolve submitter emails + group names so the UI doesn't need to chain
   // requests. One pass each — small lists in practice.
@@ -73,11 +150,18 @@ export async function GET(request: Request) {
   }
 
   const enriched = (suggestions ?? []).map(s => {
-    const r = s as Record<string, unknown> & { submitted_by: string | null; group_id: string | null }
+    const r = s as Record<string, unknown> & {
+      submitted_by: string | null
+      group_id: string | null
+      _original_email?: string | null
+    }
     return {
       ...r,
-      submitter_email: r.submitted_by ? (emailMap[r.submitted_by] ?? null) : null,
-      group_name:      r.group_id     ? (groupMap[r.group_id]      ?? null) : null,
+      // For support_requests and feature_suggestions, use _original_email if submitted_by is null
+      submitter_email: r.submitted_by
+        ? (emailMap[r.submitted_by] ?? null)
+        : (r._original_email ?? null),
+      group_name: r.group_id ? (groupMap[r.group_id] ?? null) : null,
     }
   })
 
