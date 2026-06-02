@@ -5500,3 +5500,78 @@ session check.
 ### Manual setup required
 - Run migration `061_invite_tokens.sql` in Supabase
 - **Run migration `062_group_owner.sql` in Supabase** — adds `group_owner` to the role CHECK constraint, adds `groups.owner_user_id`, backfills owners from earliest admin / legacy `owner_id`, promotes them to `group_owner`, and splits the `user_suggestions` "users manage own" policy into separate INSERT / SELECT / UPDATE policies so feedback submissions stop failing with a `submitted_by` RLS error.
+
+---
+
+## Website Monitoring Agent Template
+
+**Migration**: `063_website_monitoring_template.sql`
+
+A published, featured agent template for monitoring website uptime and performance. Groups can clone this template to create monitoring agents that check HTTP status, response times, SSL validity, and send automated alerts.
+
+### Template Metadata
+- **Name**: Website Monitoring Agent
+- **Slug**: `website-monitoring-agent`
+- **Category**: `operations`
+- **Avatar**: 🌐
+- **Color**: `#10b981` (green)
+- **Status**: Published & Featured
+- **Sort Order**: 40
+
+### Capabilities
+- Monitor website uptime and availability
+- Check HTTP status codes (2xx, 3xx, 4xx, 5xx)
+- Measure response times with configurable thresholds
+- Validate SSL certificates and expiry dates (HTTPS)
+- Retry failed requests with exponential backoff (2s, 4s, 8s)
+- Send alerts via `send_email` or `send_slack`
+- Track historical uptime trends
+
+### Default Tools
+- `send_email` — Email alerts with detailed failure context
+- `send_slack` — Slack notifications to configured channels
+
+### Instructions Summary
+The template's instructions guide the agent to:
+1. **HTTP Health Checks**: Make requests to configured URLs, record status codes and response times
+2. **SSL Validation**: For HTTPS URLs, verify certificate validity and check expiry dates (warn if < 30 days)
+3. **Retry Logic**: Retry up to 3 times with exponential backoff on timeouts or network errors
+4. **Alert Formatting**: Include URL, status code, response time, SSL status, timestamp, and retry count
+5. **Success Summary**: When all URLs are healthy, send a brief summary with status codes and response times
+
+### Alert Thresholds
+- **Response Time Warning**: > 2000ms
+- **Response Time Critical**: > 5000ms
+- **SSL Certificate Warning**: Expires within 30 days
+- **Retries**: Up to 3 attempts with 2s, 4s, 8s backoff
+
+### Scheduling Recommendations
+This template is designed for scheduled execution:
+- **Daily monitoring**: Run once per day at a specific time
+- **Twice-daily monitoring**: Schedule morning and evening checks
+- **Custom schedules**: Weekly or monthly for less critical endpoints
+
+The current agent scheduling system supports `daily`, `weekly`, and `monthly` frequencies with configurable times and timezones.
+
+### Testing the Template
+After deployment, test the template by:
+1. Creating a new agent from the "Website Monitoring Agent" template
+2. Configuring test URLs (mix of healthy and intentionally unreachable sites)
+3. Setting up email recipients or Slack channel
+4. Running the agent manually via the Run button
+5. Verifying alert formatting and retry logic
+6. Enabling scheduling and confirming next run time calculation
+
+### Usage Example
+```javascript
+// User creates agent from template and provides context in run:
+"Monitor the following websites:
+- https://example.com
+- https://api.example.com/health
+- https://old-site.example.com
+
+Send alerts to engineering@example.com if any site is down.
+Send success summary to #monitoring channel in Slack."
+```
+
+The agent will check each URL, retry failures, validate SSL certificates, and send formatted alerts or success summaries based on the results.
