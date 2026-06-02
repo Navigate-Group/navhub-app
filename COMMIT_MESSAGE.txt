@@ -1,0 +1,46 @@
+Add Website Monitoring Agent template for operations teams
+
+Implements a new featured agent template enabling automated website uptime
+monitoring with email and Slack alerts. Template includes HTTP health checks,
+SSL validation, retry logic with exponential backoff, and structured alerting.
+
+## Changes
+
+- Add migration 063_website_monitoring_template.sql
+  - Creates published, featured "Website Monitoring Agent" template
+  - Category: operations, default tools: send_email, send_slack
+  - Comprehensive instructions for HTTP/SSL monitoring and alerting
+
+- Update CLAUDE.md
+  - Add "Website Monitoring Agent Template" section
+  - Document capabilities, thresholds, scheduling, and testing procedure
+
+- Update README.md
+  - Update migration count to 63
+  - Add agent_templates to key tables
+  - Include Website Monitoring in featured templates list
+
+## Template Features
+
+- HTTP status monitoring (2xx/3xx/4xx/5xx detection)
+- Response time tracking (warn: 2s, critical: 5s)
+- SSL certificate validation (warn: < 30 days to expiry)
+- Retry logic: 3 attempts with 2s, 4s, 8s exponential backoff
+- Structured alerts via email or Slack
+- Success summaries when all endpoints healthy
+
+## Post-Deployment
+
+1. Run migration 063_website_monitoring_template.sql in Supabase
+2. Verify template appears in /admin/templates as featured
+3. Create test agent with mix of healthy/failing URLs
+4. Validate alert formatting and retry behavior
+5. Configure daily/twice-daily schedule and verify execution
+
+## Build Note
+
+Pre-existing build errors in app/(admin)/admin/assistant/page.tsx are
+unrelated to this work and remain out of scope per brief instructions.
+Changes are migration + documentation only (no code modifications).
+
+Co-Authored-By: Claude <noreply@anthropic.com>

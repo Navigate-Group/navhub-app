@@ -20,7 +20,7 @@ Multi-tenant financial dashboard for business groups to monitor performance acro
 - **Excel uploads** — Drag-and-drop .xlsx import with downloadable templates (P&L, Balance Sheet, Trial Balance)
 - **13-week cash flow forecast** — Manual items + Xero AR/AP pull, group summary, snapshots
 - **Revenue forecasting** — 7-year projection model with interactive sliders, shareable views
-- **AI agents** — Claude/GPT-4o powered agents with streaming execution, tool calling, scheduling, interactive responses
+- **AI agents** — Claude/GPT-4o powered agents with streaming execution, tool calling, scheduling, interactive responses; featured templates (Legal, Financial, Report Writing, Website Monitoring)
 - **Document management** — Markdown editor with locking, versioning, sharing, export (DOCX/PPTX/PDF), file uploads
 - **Report templates** — Slot-based template system with design tokens, scaffold editor, agent-powered generation
 - **Marketing intelligence** — 9 platform tracking (GA4, Search Console, Meta, LinkedIn, Google/Meta Ads, Mailchimp, HubSpot, Freshsales) with OAuth sync
@@ -86,7 +86,7 @@ supabase/          Database migrations (001–029)
 
 ## Database
 
-29 migrations in `supabase/migrations/`. Key tables: `groups`, `companies`, `divisions`, `financial_snapshots`, `agents`, `agent_runs`, `documents`, `report_templates`, `custom_reports`, `cashflow_items`, `marketing_snapshots`.
+63 migrations in `supabase/migrations/`. Key tables: `groups`, `companies`, `divisions`, `financial_snapshots`, `agents`, `agent_runs`, `agent_templates`, `documents`, `report_templates`, `custom_reports`, `cashflow_items`, `marketing_snapshots`.
 
 All tables use Row Level Security. Access is governed by `get_user_group_ids()`, `is_group_admin()`, and `can_access_division()` helper functions.
 
