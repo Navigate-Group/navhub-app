@@ -15,7 +15,8 @@ async function verifySuperAdmin(userId: string): Promise<boolean> {
 }
 
 // ── GET /api/admin/suggestions ──────────────────────────────────────────────
-// Lists all user_suggestions with submitter email + group name resolved.
+// Lists all feedback from user_suggestions, support_requests, and feature_suggestions
+// with submitter email + group name resolved.
 // Supports `status` filter (comma-separated; default = open statuses).
 //
 // Response also includes `unread_count` — count of `submitted` rows the
@@ -32,25 +33,93 @@ export async function GET(request: Request) {
   const statusParam = url.searchParams.get('status')
   const statuses = statusParam
     ? statusParam.split(',').filter(Boolean)
-    : ['submitted', 'triaged', 'acknowledged', 'acting']
+    : ['submitted', 'triaged', 'acknowledged', 'acting', 'open', 'new']
 
   const admin = createAdminClient()
 
-  const { data: suggestions, error } = await admin
-    .from('user_suggestions')
-    .select('*')
-    .in('status', statuses)
-    .order('created_at', { ascending: false })
-    .limit(200)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  // Map statuses for different tables
+  // user_suggestions: submitted, triaged, acknowledged, acting, declined, shipped
+  // support_requests: open (default), or any status updated by admin
+  // feature_suggestions: new (default), or any status updated by admin
+
+  // For 'open' filter, include submitted/open/new (all unprocessed items)
+  const includeOpenStatuses = statuses.includes('open') ||
+                               statuses.includes('submitted') ||
+                               statuses.includes('triaged') ||
+                               statuses.includes('acknowledged') ||
+                               statuses.includes('acting')
+
+  // Fetch from user_suggestions
+  let userSuggestionsQuery = admin.from('user_suggestions').select('*')
+  if (includeOpenStatuses && !statusParam) {
+    // Default: show open items
+    userSuggestionsQuery = userSuggestionsQuery.in('status', ['submitted', 'triaged', 'acknowledged', 'acting'])
+  } else if (statuses.length > 0) {
+    userSuggestionsQuery = userSuggestionsQuery.in('status', statuses)
+  }
+  const { data: userSuggestions, error: userSugError } = await userSuggestionsQuery
+  if (userSugError) return NextResponse.json({ error: userSugError.message }, { status: 500 })
+
+  // Fetch from support_requests - include if we're showing open items
+  let supportRequests: unknown[] = []
+  if (includeOpenStatuses || statuses.includes('open') || statuses.includes('all')) {
+    const { data, error: supportError } = await admin
+      .from('support_requests')
+      .select('*')
+    if (supportError) return NextResponse.json({ error: supportError.message }, { status: 500 })
+    supportRequests = data ?? []
+  }
+
+  // Fetch from feature_suggestions - include if we're showing new/open items
+  let featureSuggestions: unknown[] = []
+  if (includeOpenStatuses || statuses.includes('new') || statuses.includes('all')) {
+    const { data, error: featureError } = await admin
+      .from('feature_suggestions')
+      .select('*')
+    if (featureError) return NextResponse.json({ error: featureError.message }, { status: 500 })
+    featureSuggestions = data ?? []
+  }
+
+  // Normalize and combine all three sources with type field
+  const normalizedUserSuggestions = (userSuggestions ?? []).map((s: Record<string, unknown>) => ({
+    ...s,
+    type: 'feedback' as const,
+    submitted_by: s.submitted_by,
+  }))
+
+  const normalizedSupportRequests = (supportRequests ?? []).map((s: Record<string, unknown>) => ({
+    ...s,
+    type: 'support_request' as const,
+    submitted_by: s.user_id,
+    what_trying: s.message || '',
+    what_happened: s.message || '',
+    what_wanted: s.message || '',
+  }))
+
+  const normalizedFeatureSuggestions = (featureSuggestions ?? []).map((s: Record<string, unknown>) => ({
+    ...s,
+    type: 'feature_suggestion' as const,
+    submitted_by: s.user_id,
+    what_trying: s.suggestion || '',
+    what_happened: s.suggestion || '',
+    what_wanted: s.suggestion || '',
+  }))
+
+  // Combine all sources
+  const allSuggestions = [
+    ...normalizedUserSuggestions,
+    ...normalizedSupportRequests,
+    ...normalizedFeatureSuggestions,
+  ].sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime())
+    .slice(0, 200)
 
   // Resolve submitter emails + group names so the UI doesn't need to chain
   // requests. One pass each — small lists in practice.
-  const submitterIds = Array.from(new Set(((suggestions ?? []) as Array<{ submitted_by: string | null }>)
-    .map(s => s.submitted_by)
+  const submitterIds = Array.from(new Set(allSuggestions
+    .map(s => s.submitted_by as string | null)
     .filter((x): x is string => !!x)))
-  const groupIds = Array.from(new Set(((suggestions ?? []) as Array<{ group_id: string | null }>)
-    .map(s => s.group_id)
+  const groupIds = Array.from(new Set(allSuggestions
+    .map(s => s.group_id as string | null)
     .filter((x): x is string => !!x)))
 
   const emailMap: Record<string, string> = {}
@@ -72,21 +141,32 @@ export async function GET(request: Request) {
     }
   }
 
-  const enriched = (suggestions ?? []).map(s => {
-    const r = s as Record<string, unknown> & { submitted_by: string | null; group_id: string | null }
+  const enriched = allSuggestions.map(s => {
+    const submitterId = s.submitted_by as string | null
+    const groupId = s.group_id as string | null
     return {
-      ...r,
-      submitter_email: r.submitted_by ? (emailMap[r.submitted_by] ?? null) : null,
-      group_name:      r.group_id     ? (groupMap[r.group_id]      ?? null) : null,
+      ...s,
+      submitter_email: submitterId ? (emailMap[submitterId] ?? s.email ?? null) : (s.email ?? null),
+      group_name:      groupId     ? (groupMap[groupId]      ?? null) : null,
     }
   })
 
   // Always-fresh unread count (independent of the filter param) so the
   // sidebar badge stays accurate even when the page filter is set.
-  const { count: unreadCount } = await admin
+  const { count: userSugCount } = await admin
     .from('user_suggestions')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'submitted')
+  const { count: supportCount } = await admin
+    .from('support_requests')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'open')
+  const { count: featureCount } = await admin
+    .from('feature_suggestions')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'new')
 
-  return NextResponse.json({ data: enriched, unread_count: unreadCount ?? 0 })
+  const unreadCount = (userSugCount ?? 0) + (supportCount ?? 0) + (featureCount ?? 0)
+
+  return NextResponse.json({ data: enriched, unread_count: unreadCount })
 }

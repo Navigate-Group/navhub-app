@@ -8,6 +8,7 @@ type Filter = 'open' | 'submitted' | 'triaged' | 'acknowledged' | 'declined' | '
 interface EnrichedSuggestion extends UserSuggestion {
   submitter_email: string | null
   group_name:      string | null
+  type:            'feedback' | 'support_request' | 'feature_suggestion'
 }
 
 const FILTERS: { value: Filter; label: string }[] = [
@@ -27,6 +28,18 @@ const STATUS_COLOUR: Record<string, string> = {
   acting:       'bg-blue-500/15 text-blue-300 border-blue-500/30',
   declined:     'bg-zinc-700 text-zinc-300 border-zinc-600',
   shipped:      'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+}
+
+const TYPE_COLOUR: Record<string, string> = {
+  feedback:            'bg-blue-500/15 text-blue-300 border-blue-500/30',
+  support_request:     'bg-rose-500/15 text-rose-300 border-rose-500/30',
+  feature_suggestion:  'bg-purple-500/15 text-purple-300 border-purple-500/30',
+}
+
+const TYPE_LABEL: Record<string, string> = {
+  feedback:            'Feedback',
+  support_request:     'Support Request',
+  feature_suggestion:  'Feature Suggestion',
 }
 
 interface SageTriage {
@@ -163,7 +176,7 @@ export default function AdminSuggestionsPage() {
       <div>
         <h1 className="text-xl font-semibold text-zinc-100">User Feedback</h1>
         <p className="text-xs text-zinc-400 mt-0.5">
-          Submissions from across all groups. Sage triages new submissions on demand.
+          Feedback, support requests, and feature suggestions from across all groups. Sage triages new submissions on demand.
         </p>
       </div>
 
@@ -240,10 +253,15 @@ function SuggestionCard({
 }) {
   const triage = (suggestion.sage_triage ?? null) as SageTriage | null
   const statusBadge = STATUS_COLOUR[suggestion.status] ?? 'bg-zinc-800 text-zinc-300 border-zinc-700'
+  const typeBadge = TYPE_COLOUR[suggestion.type] ?? 'bg-zinc-800 text-zinc-300 border-zinc-700'
+  const typeLabel = TYPE_LABEL[suggestion.type] ?? suggestion.type
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
       <div className="flex items-start gap-3 flex-wrap">
+        <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${typeBadge}`}>
+          {typeLabel}
+        </span>
         <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${statusBadge}`}>
           {suggestion.status}
         </span>
