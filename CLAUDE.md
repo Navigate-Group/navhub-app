@@ -5151,10 +5151,14 @@ queries `user_groups` for any row with `role='super_admin'`).
   the source of truth).
 
 ### Admin review surface
-- **`/admin/suggestions`** — full review page. Filter pills (Open /
-  Submitted / Triaged / Acknowledged / Declined / Shipped / All).
-  Per-card actions: Triage with Sage · Acknowledge · Acting · Shipped ·
-  Decline · Send response. Each card shows submitter email, group
+- **`/admin/suggestions`** — full review page displaying all feedback from
+  three sources: `user_suggestions` (from FeedbackModal), `support_requests`
+  (from "Get Support" form), and `feature_suggestions` (from "Suggest a
+  Feature" form). Each submission displays a type badge ('User Feedback',
+  'Support Request', or 'Feature Suggestion') followed by status badge.
+  Filter pills (Open / Submitted / Triaged / Acknowledged / Declined /
+  Shipped / All). Per-card actions: Triage with Sage · Acknowledge · Acting ·
+  Shipped · Decline · Send response. Each card shows submitter email, group
   name, the three feedback fields, the operator note (if any), and
   Sage's triage block when present (disposition, reasoning, suggested
   user response).
@@ -5164,14 +5168,18 @@ queries `user_groups` for any row with `role='super_admin'`).
 
 ### Admin APIs
 ```
-GET    /api/admin/suggestions                   → list + unread_count
+GET    /api/admin/suggestions                   → unified list from all three tables + unread_count
 PATCH  /api/admin/suggestions/[id]              → status / operator_note
 POST   /api/admin/suggestions/[id]/triage       → Claude Haiku triage → sage_triage JSONB
 POST   /api/admin/suggestions/[id]/notify       → Resend email + bump status + record user_notified_at
 ```
-All super_admin-gated via `verifySuperAdmin`. The list endpoint always
-returns a fresh `unread_count` (count of `submitted` rows, independent
-of the filter param) so the sidebar badge stays accurate.
+All super_admin-gated via `verifySuperAdmin`. The GET endpoint queries
+`user_suggestions`, `support_requests`, and `feature_suggestions` in
+parallel, normalizes them to a common shape, adds a `type` discriminator
+('feedback', 'support_request', or 'feature_suggestion'), combines and
+sorts by creation date. Always returns a fresh `unread_count` (count of
+`submitted` rows, independent of the filter param) so the sidebar badge
+stays accurate.
 
 ### Sage triage
 Uses **Claude Haiku 4.5** (fast + cheap — triage is a classification
