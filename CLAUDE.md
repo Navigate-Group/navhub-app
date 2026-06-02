@@ -5500,3 +5500,46 @@ session check.
 ### Manual setup required
 - Run migration `061_invite_tokens.sql` in Supabase
 - **Run migration `062_group_owner.sql` in Supabase** — adds `group_owner` to the role CHECK constraint, adds `groups.owner_user_id`, backfills owners from earliest admin / legacy `owner_id`, promotes them to `group_owner`, and splits the `user_suggestions` "users manage own" policy into separate INSERT / SELECT / UPDATE policies so feedback submissions stop failing with a `submitted_by` RLS error.
+
+---
+
+## Unified Admin Feedback Dashboard
+
+### The problem
+Users can submit three types of feedback:
+1. **Support requests** via "Get Support" form → stored in `support_requests`
+2. **Feature suggestions** via "Suggest a Feature" form → stored in `feature_suggestions`
+3. **General feedback/bug reports** via FeedbackModal → stored in `user_suggestions`
+
+Previously, the admin dashboard at `/admin/suggestions` only displayed `user_suggestions`. Support requests and feature suggestions were invisible to admins.
+
+### The solution
+Modified `/api/admin/suggestions/route.ts` to query all three tables, normalize each result set to a common shape, union them into a single array sorted by `created_at` DESC, and return with enriched submitter email and group name data.
+
+### Normalization shape
+All three feedback types are normalized to include:
+- `id`, `created_at`, `submitted_by`, `group_id` — common fields
+- `what_trying`, `what_happened`, `what_wanted` — three-column feedback structure
+- `status` — mapped from native statuses (`open` → `submitted`, `new` → `submitted`)
+- `type` — discriminator field: `'feedback'`, `'support_request'`, or `'feature_suggestion'`
+- Optional fields from `user_suggestions`: `category`, `sage_triage`, `operator_note`, `user_notified_at`, `sage_finding_id`
+
+Support requests and feature suggestions populate the three-column structure with sensible defaults:
+- **Support**: `what_trying: 'Get support'`, `what_happened: <message>`, `what_wanted: 'Resolution'`
+- **Feature**: `what_trying: 'Suggest a feature'`, `what_happened: 'N/A'`, `what_wanted: <suggestion>`
+
+### UI changes
+Updated `/admin/suggestions` page component to:
+- Add `type` field to `EnrichedSuggestion` interface
+- Display a colored type badge (Feedback / Support / Feature) alongside the status badge in each suggestion card
+- Type badges use distinct colors: blue for feedback, rose for support, purple for features
+
+### Filter behavior
+Support requests and feature suggestions are only fetched when the status filter includes `submitted`, `triaged`, `acknowledged`, or `acting` (since they only have `open` and `new` statuses respectively, which map to the "open" category). When filtering for `declined` or `shipped`, only `user_suggestions` are queried.
+
+### Files modified
+- `app/api/admin/suggestions/route.ts` — queries all three tables, normalizes, and unions results
+- `app/(admin)/admin/suggestions/page.tsx` — displays type badge in UI
+
+### No migration required
+All three tables already exist in the database. This change only affects the API and UI layers.
