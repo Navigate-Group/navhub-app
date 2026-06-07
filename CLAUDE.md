@@ -6069,3 +6069,53 @@ The changes enable operators to:
 ### Build Status
 
 ⚠️  Pre-existing build error in `/app/(admin)/admin/assistant/page.tsx` (missing UI components from `@/components/ui/*`) remains unchanged (out of scope per brief rules)
+
+---
+
+## 2025-06-07 — Fix Sage test-connection 404 by normalizing Builder URL trailing slashes
+
+**Issue**: NavHub's Sage test-connection endpoint was hitting a 404 on the Builder because saved Builder URLs with trailing slashes caused malformed URLs like `https://builder.navhub.co//api/sage/inbound/health` (double slash) when constructing the health check endpoint path.
+
+**Root Cause**: The Builder URL was saved to the database without normalization. When the test-connection handler concatenated `${builderUrl}/api/sage/inbound/health`, any trailing slash in `builderUrl` resulted in `//` in the final URL.
+
+**Solution**: Normalize the Builder URL by stripping trailing slashes in three locations:
+
+1. **Settings save endpoint** — Strip trailing slashes when persisting to database
+2. **Test-connection with unsaved changes** — Strip trailing slashes when testing with form values
+3. **Test-connection with saved settings** — Strip trailing slashes when loading from database (handles legacy data)
+
+### Files Modified
+
+**`app/api/admin/sage/settings/route.ts`**
+- Line 66: Changed `const` to `let` for `builder_url` destructuring
+- Line 77: Added normalization: `builder_url = builder_url.replace(/\/+$/, '')` before validation and save
+- Ensures all saved URLs are clean (no trailing slashes)
+
+**`app/api/sage/test-connection/route.ts`**
+- Line 39: Added normalization when testing with provided config: `builderUrl = body.builder_url.replace(/\/+$/, '')`
+- Line 74: Added normalization when loading from database: `builderUrl = settings.builder_url.replace(/\/+$/, '')`
+- Ensures URL construction always produces clean paths regardless of input source
+
+### Example
+
+**Before**:
+- User enters: `https://builder.navhub.co/`
+- Saved as: `https://builder.navhub.co/`
+- Constructed URL: `https://builder.navhub.co//api/sage/inbound/health` ❌ (404)
+
+**After**:
+- User enters: `https://builder.navhub.co/`
+- Normalized to: `https://builder.navhub.co`
+- Constructed URL: `https://builder.navhub.co/api/sage/inbound/health` ✅ (200)
+
+### Acceptance Criteria
+
+✅ Builder URL with trailing slash gets normalized when saved to database
+✅ Builder URL with trailing slash gets normalized when testing unsaved changes
+✅ Builder URL from database gets normalized when loading (handles legacy data)
+✅ Constructed health endpoint URL is always clean: `{builder_url}/api/sage/inbound/health`
+✅ No changes to frontend UI or user-facing behavior
+
+### Build Status
+
+⚠️  Pre-existing build error in `/app/(admin)/admin/assistant/page.tsx` remains unchanged (out of scope)

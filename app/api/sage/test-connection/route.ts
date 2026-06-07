@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
   if (body.builder_url && body.shared_secret && body.app_slug) {
     // Test with provided config (unsaved changes)
-    builderUrl = body.builder_url
+    builderUrl = body.builder_url.replace(/\/+$/, '') // Normalize: strip trailing slashes
     sharedSecret = body.shared_secret
     appSlug = body.app_slug
   } else {
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
       secret_length: settings.shared_secret?.length
     })
 
-    builderUrl = settings.builder_url
+    builderUrl = settings.builder_url.replace(/\/+$/, '') // Normalize: strip trailing slashes
     sharedSecret = settings.shared_secret
     appSlug = settings.app_slug
   }

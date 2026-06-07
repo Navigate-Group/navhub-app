@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json()
-  const { builder_url, shared_secret, app_slug } = body
+  let { builder_url, shared_secret, app_slug } = body
 
   // Validate required fields
   if (!builder_url || !shared_secret || !app_slug) {
@@ -72,6 +72,9 @@ export async function POST(request: Request) {
       { status: 400 }
     )
   }
+
+  // Normalize builder_url: strip trailing slashes to ensure clean URL construction
+  builder_url = builder_url.replace(/\/+$/, '')
 
   // Check if settings already exist
   const { data: existing } = await supabase
