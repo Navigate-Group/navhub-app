@@ -5733,3 +5733,79 @@ export function withErrorCapture<T extends (...args: unknown[]) => Promise<Respo
 ### Verification
 
 Confirmed via `npm run lint` that the specific error on `lib/signals/error-capture.ts:49` is resolved. Pre-existing lint errors in other files remain unchanged and out of scope.
+
+---
+
+## Sage Phase 1 & 2: TypeScript Strict Type Casting Fix
+
+**Date**: 2025-01-XX
+**Brief**: Fix TypeScript 5+ strict type errors in `lib/sage-contract.ts`
+
+### Problem
+
+Lines 132, 147, and 158 of `lib/sage-contract.ts` used direct type assertions from specific payload types to `Record<string, unknown>`, which TypeScript 5+ rejects due to stricter structural type checking:
+
+```typescript
+// Line 132 - postReviewResult
+await postToBuilder(config, '/api/sage/inbound/review-result', payload as Record<string, unknown>)
+
+// Line 147 - postHealthPing  
+await postToBuilder(config, '/api/sage/inbound/health', payload as Record<string, unknown>)
+
+// Line 158 - postEscalation
+await postToBuilder(config, '/api/sage/inbound/escalation', payload as Record<string, unknown>)
+```
+
+TypeScript compiler errors:
+```
+lib/sage-contract.ts(132,66): error TS2352: Conversion of type 'ReviewResultPayload' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'ReviewResultPayload'.
+
+lib/sage-contract.ts(147,59): error TS2352: Conversion of type 'HealthPayload' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'HealthPayload'.
+
+lib/sage-contract.ts(158,63): error TS2352: Conversion of type 'EscalationPayload' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'EscalationPayload'.
+```
+
+### Solution
+
+Applied TypeScript's recommended pattern of casting through `unknown` first for all three functions:
+
+```typescript
+// Line 132 - postReviewResult
+await postToBuilder(config, '/api/sage/inbound/review-result', payload as unknown as Record<string, unknown>)
+
+// Line 147 - postHealthPing
+await postToBuilder(config, '/api/sage/inbound/health', payload as unknown as Record<string, unknown>)
+
+// Line 158 - postEscalation
+await postToBuilder(config, '/api/sage/inbound/escalation', payload as unknown as Record<string, unknown>)
+```
+
+### Changes Made
+
+**Modified Files:**
+- `lib/sage-contract.ts`:
+  - Line 132: `postReviewResult` — Added `unknown` intermediate cast
+  - Line 147: `postHealthPing` — Added `unknown` intermediate cast  
+  - Line 158: `postEscalation` — Added `unknown` intermediate cast
+
+### Impact
+
+- ✅ Eliminated all three TypeScript TS2352 errors in sage-contract.ts
+- ✅ Maintained 100% functional compatibility — this is a compile-time-only change
+- ✅ No runtime behavior change — payloads are still serialized identically via JSON.stringify
+- ✅ Follows TypeScript's official recommendation for structural type narrowing
+
+### Type Safety Rationale
+
+The intermediate `unknown` cast is TypeScript's escape hatch for intentional structural type conversions:
+- Direct cast `T → Record<string, unknown>` fails when T lacks an index signature
+- Double cast `T → unknown → Record<string, unknown>` signals intentional conversion
+- Runtime behavior is unchanged — both approaches produce the same JavaScript
+- The payloads are immediately serialized via `JSON.stringify`, so the Record type is only used for the function signature
+
+### Verification
+
+Confirmed via `node_modules/.bin/tsc --noEmit lib/sage-contract.ts` that all three errors are resolved. The file now compiles cleanly under TypeScript strict mode.
