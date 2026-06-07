@@ -129,7 +129,7 @@ export async function postReviewResult(
   config:  OutboundConfig,
   payload: ReviewResultPayload,
 ): Promise<void> {
-  await postToBuilder(config, '/api/sage/inbound/review-result', payload)
+  await postToBuilder(config, '/api/sage/inbound/review-result', payload as Record<string, unknown>)
 }
 
 /**
@@ -144,7 +144,7 @@ export async function postHealthPing(config: OutboundConfig): Promise<void> {
     sage_version:   SAGE_VERSION,
     ts:             new Date().toISOString(),
   }
-  await postToBuilder(config, '/api/sage/inbound/health', payload)
+  await postToBuilder(config, '/api/sage/inbound/health', payload as Record<string, unknown>)
 }
 
 /**
@@ -155,7 +155,7 @@ export async function postEscalation(
   config:  OutboundConfig,
   payload: EscalationPayload,
 ): Promise<void> {
-  await postToBuilder(config, '/api/sage/inbound/escalation', payload)
+  await postToBuilder(config, '/api/sage/inbound/escalation', payload as Record<string, unknown>)
 }
 
 /**
