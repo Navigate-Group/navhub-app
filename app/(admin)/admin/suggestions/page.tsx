@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import type { UserSuggestion } from '@/lib/types'
 
 type Filter = 'open' | 'submitted' | 'triaged' | 'acknowledged' | 'declined' | 'shipped' | 'all'
@@ -49,7 +49,7 @@ export default function AdminSuggestionsPage() {
   const [toast,       setToast]       = useState<string | null>(null)
   const [respondTo,   setRespondTo]   = useState<EnrichedSuggestion | null>(null)
 
-  function loadAll() {
+  const loadAll = useCallback(() => {
     setLoading(true)
     const params = new URLSearchParams()
     if (filter === 'open')      params.set('status', 'submitted,triaged,acknowledged,acting')
@@ -64,8 +64,8 @@ export default function AdminSuggestionsPage() {
       .then(r => r.json())
       .then((j: { data?: EnrichedSuggestion[] }) => setSuggestions(j.data ?? []))
       .finally(() => setLoading(false))
-  }
-  useEffect(() => { loadAll() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filter])
+  }, [filter])
+  useEffect(() => { loadAll() }, [loadAll])
 
   useEffect(() => {
     if (!toast) return

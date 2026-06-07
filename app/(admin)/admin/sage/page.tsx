@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Search, ExternalLink, CheckCircle2, Clock, GitBranch, Rocket } from 'lucide-react'
 import type {
   SageFinding, SageScan, SageSeverity, SageFindingStatus, SageActionType, SageEscalation,
@@ -92,7 +92,7 @@ export default function AdminSagePage() {
     }
   }
 
-  function loadAll() {
+  const loadAll = useCallback(() => {
     setLoading(true)
     // Always fetch the broadest status set the current filter would allow,
     // then refine in-memory. Keeps the search + severity + action filters
@@ -114,8 +114,8 @@ export default function AdminSagePage() {
         setEscalations((eJson.data ?? []) as SageEscalation[])
       })
       .finally(() => setLoading(false))
-  }
-  useEffect(() => { loadAll() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status])
+  }, [status])
+  useEffect(() => { loadAll() }, [status, loadAll])
 
   async function handleEscalateFinding(finding: SageFinding) {
     setEscalatingFinding(finding)
@@ -412,7 +412,7 @@ export default function AdminSagePage() {
       {tab === 'escalations' && (
         <div className="space-y-4">
           <p className="text-xs text-zinc-400">
-            Escalations sent to Builder's Kaizen, with status-return tracking.
+            Escalations sent to Builder&apos;s Kaizen, with status-return tracking.
           </p>
 
           {/* Filters: Status and Priority */}
@@ -982,7 +982,7 @@ function EscalationModal({
           <div>
             <h2 className="text-lg font-semibold text-zinc-100">Escalate to Builder</h2>
             <p className="text-xs text-zinc-400 mt-1">
-              Send this finding to Builder's Kaizen for code-level resolution.
+              Send this finding to Builder&apos;s Kaizen for code-level resolution.
             </p>
           </div>
 

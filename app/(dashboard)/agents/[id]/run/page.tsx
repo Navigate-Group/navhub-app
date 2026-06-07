@@ -153,7 +153,7 @@ export default function AgentRunPage() {
     } finally {
       setLoading(false)
     }
-  }, [agentId, router])
+  }, [agentId, router, initialNotifyEmail, initialNotifySlack])
 
   useEffect(() => { void loadAgent() }, [loadAgent])
 

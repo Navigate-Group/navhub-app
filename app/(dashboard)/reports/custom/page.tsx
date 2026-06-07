@@ -179,7 +179,7 @@ export default function ReportsLibraryPage() {
     if (sort === 'name_desc') r.sort((a, b) => b.name.localeCompare(a.name))
 
     return r
-  }, [reports, search, source, selectedTags, sort])
+  }, [reports, search, source, selectedTags, sort, activeFolder])
 
   const hasFilters = search !== '' || selectedTags.length > 0 || source !== 'all' || sort !== 'newest'
 
