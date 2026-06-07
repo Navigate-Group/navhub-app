@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Sparkles, Plus, Trash2, Loader2, X, Pencil } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -59,15 +59,15 @@ export default function AgentSkillsPanel({ agentId, mode }: AgentSkillsPanelProp
   const [busy,    setBusy]    = useState(false)
   const [toast,   setToast]   = useState<string | null>(null)
 
-  function loadAll() {
+  const loadAll = useCallback(() => {
     if (!agentId) { setLoading(false); return }
     setLoading(true)
     fetch(`/api/agents/${agentId}/skills`)
       .then(r => r.json())
       .then((j: SkillsResponse) => setData(j.data ?? null))
       .finally(() => setLoading(false))
-  }
-  useEffect(() => { loadAll() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [agentId])
+  }, [agentId])
+  useEffect(() => { loadAll() }, [loadAll])
 
   useEffect(() => {
     if (!toast) return
@@ -75,9 +75,9 @@ export default function AgentSkillsPanel({ agentId, mode }: AgentSkillsPanelProp
     return () => clearTimeout(t)
   }, [toast])
 
-  const assigned        = data?.assigned ?? []
-  const inheritPlatform = data?.inherited_platform ?? []
-  const inheritGroup    = (data?.inherited_group ?? []).map(g => g.skills).filter(Boolean) as Skill[]
+  const assigned        = useMemo(() => data?.assigned ?? [], [data?.assigned])
+  const inheritPlatform = useMemo(() => data?.inherited_platform ?? [], [data?.inherited_platform])
+  const inheritGroup    = useMemo(() => (data?.inherited_group ?? []).map(g => g.skills).filter(Boolean) as Skill[], [data?.inherited_group])
 
   const assignableSkills = useMemo(() => {
     if (!data) return [] as Skill[]

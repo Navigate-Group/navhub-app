@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { AgentTemplate, Skill, PlatformKnowledge } from '@/lib/types'
@@ -24,7 +24,7 @@ export default function AdminTemplateEditPage() {
   const [saving,      setSaving]      = useState(false)
   const [toast,       setToast]       = useState<string | null>(null)
 
-  function load() {
+  const load = useCallback(() => {
     Promise.all([
       fetch(`/api/admin/templates/${id}`).then(r => r.json()),
       fetch('/api/admin/skills').then(r => r.json()).catch(() => ({ data: [] })),
@@ -36,8 +36,8 @@ export default function AdminTemplateEditPage() {
         setAllKnowledge(kJson.data ?? [])
       })
       .finally(() => setLoading(false))
-  }
-  useEffect(() => { load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id])
+  }, [id])
+  useEffect(() => { load() }, [load])
 
   useEffect(() => {
     if (!toast) return

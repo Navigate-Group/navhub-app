@@ -669,7 +669,7 @@ export default function RunStreamPage() {
         return next
       })
     }
-  }, [run, followUpThread.length])
+  }, [run, followUpThread.length, params.runId])
 
   async function handleFollowUp() {
     const brief = followUpText.trim()
