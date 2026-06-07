@@ -46,7 +46,7 @@ export async function captureError(ctx: ErrorContext): Promise<void> {
  * Usage:
  *   export const POST = withErrorCapture('/api/foo', async (req) => { ... })
  */
-export function withErrorCapture<T extends (...args: any[]) => Promise<Response>>(
+export function withErrorCapture<T extends (...args: unknown[]) => Promise<Response>>(
   route:   string,
   handler: T,
 ): T {
