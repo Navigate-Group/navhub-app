@@ -31,7 +31,10 @@ export async function GET() {
 
   if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
     console.error('[sage-settings] Failed to load settings:', error)
-    return NextResponse.json({ error: 'Failed to load settings' }, { status: 500 })
+    return NextResponse.json({
+      error: 'Failed to load settings',
+      details: error.message || error.hint || String(error)
+    }, { status: 500 })
   }
 
   return NextResponse.json({ settings: settings ?? null })
@@ -93,7 +96,10 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('[sage-settings] Failed to update settings:', error)
-      return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 })
+      return NextResponse.json({
+        error: 'Failed to update settings',
+        details: error.message || error.hint || String(error)
+      }, { status: 500 })
     }
     result = data
   } else {
@@ -110,7 +116,10 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('[sage-settings] Failed to create settings:', error)
-      return NextResponse.json({ error: 'Failed to create settings' }, { status: 500 })
+      return NextResponse.json({
+        error: 'Failed to create settings',
+        details: error.message || error.hint || String(error)
+      }, { status: 500 })
     }
     result = data
   }
