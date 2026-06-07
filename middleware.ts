@@ -85,7 +85,9 @@ export async function middleware(request: NextRequest) {
     // SharePoint folder picker — called from popup wizard, no session cookie guaranteed
     pathname.startsWith('/api/integrations/sharepoint/folders') ||
     // Slack OAuth callback — Slack redirects unauthenticated
-    pathname.startsWith('/api/integrations/slack/callback')
+    pathname.startsWith('/api/integrations/slack/callback') ||
+    // Sage contract lanes — Builder needs to reach inbound endpoints (HMAC-auth)
+    pathname.startsWith('/api/sage/')
 
   if (isPublic) {
     // Redirect authenticated users away from login

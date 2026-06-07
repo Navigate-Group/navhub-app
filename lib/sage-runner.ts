@@ -15,6 +15,12 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { SageScanType, SageSeverity, SageActionType, SageFindingType } from '@/lib/types'
+import {
+  getContractConfig,
+  getSageVersion,
+  postReviewResult,
+  type ReviewResultPayload,
+} from '@/lib/sage-contract'
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 const SAGE_MODEL        = 'claude-sonnet-4-6'
@@ -34,12 +40,16 @@ export interface SageAnalysisContext {
 /**
  * End-to-end orchestration: create the scan row, gather data, call Claude,
  * parse findings, persist, alert. Returns the scan id.
+ *
+ * Phase 1 extension: accepts optional request_id from Kaizen trigger,
+ * sends review-result outbound after scan completes.
  */
 export async function runSageScan(
   scanType:    SageScanType,
   triggeredBy: string | null,
   periodDays:  number,
   focusArea?:  string | null,
+  requestId?:  string | null,
 ): Promise<string> {
   const admin = createAdminClient()
   const periodEnd   = new Date()
@@ -53,6 +63,8 @@ export async function runSageScan(
       status:       'running',
       focus_area:   focusArea ?? null,
       period_days:  periodDays,
+      request_id:   requestId ?? null,
+      sage_version: getSageVersion(),
     })
     .select('id')
     .single()
@@ -116,17 +128,21 @@ export async function runSageScan(
 
     const summary       = extractSageSummary(text)
     const criticalCount = findings.filter(f => f.severity === 'critical').length
+    const now = new Date().toISOString()
     await admin.from('sage_scans').update({
       status:         'complete',
       findings_count: findings.length,
       critical_count: criticalCount,
       summary,
-      completed_at:   new Date().toISOString(),
+      completed_at:   now,
     }).eq('id', scanId)
 
     if (criticalCount > 0) {
       void notifySageAlert(scanId, summary, findings.filter(f => f.severity === 'critical'))
     }
+
+    // Phase 1 contract: send review-result to Builder after scan completes
+    void sendReviewResultToBuilder(scanId, requestId, scanType, summary, findings, now)
 
     return scanId
   } catch (err) {
@@ -588,5 +604,52 @@ async function notifySageAlert(
     }).catch(() => {})
   } catch (err) {
     console.error('[sage-alert] notify failed:', err)
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Contract outbound: review-result (Phase 1)
+// ────────────────────────────────────────────────────────────────────────────
+
+async function sendReviewResultToBuilder(
+  scanId:     string,
+  requestId:  string | null | undefined,
+  scanType:   SageScanType,
+  summary:    string,
+  findings:   ParsedFindingRow[],
+  ranAt:      string,
+): Promise<void> {
+  try {
+    const config = getContractConfig()
+    const payload: ReviewResultPayload = {
+      request_id:  requestId ?? null,
+      app:         config.appSlug,
+      review_type: scanType,
+      summary,
+      findings:    findings.slice(0, 20).map(f => ({
+        severity:       f.severity,
+        title:          f.title,
+        observation:    f.observation,
+        interpretation: f.interpretation,
+        recommendation: f.recommendation,
+        affected_count: f.affected_count,
+      })),
+      ran_at:       ranAt,
+      sage_version: getSageVersion(),
+    }
+
+    await postReviewResult(config, payload)
+
+    // Mark scan as sent to Builder
+    const admin = createAdminClient()
+    await admin
+      .from('sage_scans')
+      .update({ builder_request_at: new Date().toISOString() })
+      .eq('id', scanId)
+
+    console.log('[sage-contract] Sent review-result to Builder', { scanId, requestId })
+  } catch (err) {
+    // Best-effort delivery — log but don't throw
+    console.error('[sage-contract] Failed to send review-result:', err instanceof Error ? err.message : String(err))
   }
 }

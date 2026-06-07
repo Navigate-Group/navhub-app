@@ -31,7 +31,10 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'all',          label: 'All' },
 ]
 
+type Tab = 'overview' | 'feedback' | 'investigations' | 'escalations'
+
 export default function AdminSagePage() {
+  const [tab,       setTab]       = useState<Tab>('overview')
   const [findings,  setFindings]  = useState<SageFinding[]>([])
   const [scans,     setScans]     = useState<SageScan[]>([])
   const [groupMap,  setGroupMap]  = useState<Record<string, string>>({})
@@ -296,24 +299,92 @@ export default function AdminSagePage() {
         </div>
       )}
 
-      {/* Status pills — quick switches between open / resolved etc. */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {STATUS_FILTERS.map(opt => (
+      {/* Phase 1 IA: Tab navigation (Overview | Feedback | Investigations | Escalations) */}
+      <div className="flex items-center gap-1 border-b border-zinc-800">
+        {(['overview', 'feedback', 'investigations', 'escalations'] as const).map(t => (
           <button
-            key={opt.value}
-            onClick={() => setStatus(opt.value)}
-            className={`text-xs px-2.5 py-1 rounded border ${
-              status === opt.value
-                ? 'border-amber-500 bg-amber-500/10 text-amber-300'
-                : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
+            key={t}
+            onClick={() => setTab(t)}
+            className={`text-sm px-4 py-2 capitalize border-b-2 transition-colors ${
+              tab === t
+                ? 'border-amber-500 text-amber-300 font-medium'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            {opt.label}
+            {t}
           </button>
         ))}
       </div>
 
-      {/* Search + multi-filter row — refined client-side over the server fetch */}
+      {/* Tab: Overview — latest scan summary + critical findings */}
+      {tab === 'overview' && (
+        <div className="space-y-4">
+          <p className="text-xs text-zinc-400">
+            Latest scan summary, critical findings, and quick actions. Full findings list in Investigations tab.
+          </p>
+          {lastCompleted && (
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 space-y-2">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Latest scan</p>
+              <p className="text-sm text-zinc-200">{lastCompleted.summary || 'No summary'}</p>
+              <p className="text-xs text-zinc-400">
+                {formatDate(lastCompleted.completed_at ?? lastCompleted.started_at)} · {lastCompleted.scan_type} · {lastCompleted.findings_count} findings ({lastCompleted.critical_count} critical)
+              </p>
+            </div>
+          )}
+          <p className="text-xs text-zinc-500">
+            For detailed findings, switch to the <button onClick={() => setTab('investigations')} className="text-amber-400 hover:underline">Investigations</button> tab.
+          </p>
+        </div>
+      )}
+
+      {/* Tab: Feedback — redirect to /admin/suggestions */}
+      {tab === 'feedback' && (
+        <div className="space-y-4">
+          <p className="text-xs text-zinc-400">
+            Unified feedback inbox (support requests, feature suggestions, user reports).
+          </p>
+          <p className="text-sm text-zinc-300">
+            Feedback management has moved to <a href="/admin/suggestions" className="text-amber-400 hover:underline">/admin/suggestions</a>
+          </p>
+        </div>
+      )}
+
+      {/* Tab: Escalations — placeholder for Phase 2 */}
+      {tab === 'escalations' && (
+        <div className="space-y-4">
+          <p className="text-xs text-zinc-400">
+            Escalations sent to Builder's Kaizen, with status-return tracking.
+          </p>
+          <p className="text-sm text-zinc-500">
+            Escalation UI coming in Phase 2 (interactive Requirements frame).
+          </p>
+        </div>
+      )}
+
+      {/* Tab: Investigations — existing findings list */}
+      {tab === 'investigations' && (
+        <>
+          {/* Status pills — quick switches between open / resolved etc. */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {STATUS_FILTERS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setStatus(opt.value)}
+                className={`text-xs px-2.5 py-1 rounded border ${
+                  status === opt.value
+                    ? 'border-amber-500 bg-amber-500/10 text-amber-300'
+                    : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Search + multi-filter row — refined client-side over the server fetch (investigations tab only) */}
+      {tab === 'investigations' && (
       <div className="flex items-center gap-2 flex-wrap">
         <input
           value={search}
@@ -362,8 +433,9 @@ export default function AdminSagePage() {
           {visibleFindings.length !== findings.length ? ' (filtered)' : ''}
         </span>
       </div>
+      )}
 
-      {loading ? (
+      {tab === 'investigations' && (loading ? (
         <p className="text-sm text-zinc-400">Loading…</p>
       ) : visibleFindings.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-800 p-10 text-center">
@@ -393,10 +465,10 @@ export default function AdminSagePage() {
             <FindingCard key={f.id} finding={f} groupMap={groupMap} onAction={patchFinding} />
           ))}
         </div>
-      )}
+      ))}
 
-      {/* Scan history */}
-      {scans.length > 0 && (
+      {/* Scan history (investigations tab only) */}
+      {tab === 'investigations' && scans.length > 0 && (
         <div className="border-t border-zinc-800 pt-5 space-y-2">
           <h2 className="text-sm font-semibold text-zinc-200">Recent scans</h2>
           <ul className="divide-y divide-zinc-800 border border-zinc-800 rounded-lg">

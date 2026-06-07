@@ -1189,43 +1189,49 @@ export type SageFindingType =
   'performance' | 'usage' | 'friction' | 'security' | 'feature' | 'health' | 'suggestion' | 'alert'
 
 export interface SageScan {
-  id:             string
-  scan_type:      SageScanType
-  triggered_by:   string | null
-  status:         'running' | 'complete' | 'failed'
-  findings_count: number
-  critical_count: number
-  summary:        string | null
-  focus_area:     string | null
-  period_days:    number | null
-  started_at:     string
-  completed_at:   string | null
-  error_message:  string | null
+  id:                  string
+  scan_type:           SageScanType
+  triggered_by:        string | null
+  status:              'running' | 'complete' | 'failed'
+  findings_count:      number
+  critical_count:      number
+  summary:             string | null
+  focus_area:          string | null
+  period_days:         number | null
+  started_at:          string
+  completed_at:        string | null
+  error_message:       string | null
+  // Phase 1: Kaizen contract extensions
+  request_id:          string | null
+  sage_version:        string | null
+  builder_request_at:  string | null
 }
 
 export interface SageFinding {
-  id:              string
-  scan_id:         string | null
-  run_id:          string | null
-  finding_type:    SageFindingType
-  severity:        SageSeverity
-  action_type:     SageActionType
-  title:           string
-  observation:     string
-  interpretation:  string
-  recommendation:  string | null
-  affected_groups: string[] | null
-  affected_count:  number | null
-  cluster_key:     string | null
-  status:          SageFindingStatus
+  id:               string
+  scan_id:          string | null
+  run_id:           string | null
+  finding_type:     SageFindingType
+  severity:         SageSeverity
+  action_type:      SageActionType
+  title:            string
+  observation:      string
+  interpretation:   string
+  recommendation:   string | null
+  affected_groups:  string[] | null
+  affected_count:   number | null
+  cluster_key:      string | null
+  status:           SageFindingStatus
   dismissed_reason: string | null
-  acknowledged_by: string | null
-  acknowledged_at: string | null
-  scan_type:       SageScanType
-  period_start:    string | null
-  period_end:      string | null
-  raw_data:        Record<string, unknown> | null
-  created_at:      string
+  acknowledged_by:  string | null
+  acknowledged_at:  string | null
+  scan_type:        SageScanType
+  period_start:     string | null
+  period_end:       string | null
+  raw_data:         Record<string, unknown> | null
+  created_at:       string
+  // Phase 1: escalation tracking
+  escalation_id:    string | null
 }
 
 export interface UserSuggestion {
@@ -1242,6 +1248,40 @@ export interface UserSuggestion {
   user_notified_at: string | null
   sage_finding_id: string | null
   created_at:      string
+}
+
+// Phase 1: Unified feedback table
+export type FeedbackType = 'support_request' | 'feature_suggestion' | 'user_report'
+export type FeedbackStatus = 'submitted' | 'triaged' | 'acknowledged' | 'acting' | 'declined'
+
+export interface Feedback {
+  id:         string
+  type:       FeedbackType
+  body:       string
+  user_ref:   string | null
+  group_id:   string | null
+  status:     FeedbackStatus
+  created_at: string
+  updated_at: string
+}
+
+// Phase 1: Escalation tracking
+export type EscalationTriggerType = 'review' | 'user_report' | 'suggestion' | 'admin_interaction'
+export type EscalationStatus = 'drafted' | 'sent' | 'acknowledged' | 'acted' | 'declined'
+
+export interface SageEscalation {
+  id:                   string
+  scan_id:              string | null
+  finding_id:           string | null
+  trigger_type:         EscalationTriggerType
+  summary:              string
+  detail:               string
+  suggested_priority:   'low' | 'medium' | 'high' | 'critical' | null
+  status:               EscalationStatus
+  created_at:           string
+  sent_at:              string | null
+  kaizen_escalation_id: string | null
+  build_progress:       Record<string, unknown> | null
 }
 
 // ============================================================
