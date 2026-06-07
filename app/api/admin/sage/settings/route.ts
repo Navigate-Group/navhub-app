@@ -63,7 +63,8 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json()
-  let { builder_url, shared_secret, app_slug } = body
+  const { shared_secret, app_slug } = body
+  let { builder_url } = body
 
   // Validate required fields
   if (!builder_url || !shared_secret || !app_slug) {
