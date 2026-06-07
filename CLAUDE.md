@@ -5426,6 +5426,47 @@ alongside Skills and Sage as a logical Intelligence cluster.
 
 ---
 
+## Website Monitoring Agent Template
+
+### Migration 065
+Adds a fourth featured template to the platform: **Website Monitoring**.
+
+The template provides a ready-to-use agent configuration for groups to deploy
+agents that monitor website uptime, response times, and SSL certificate status.
+
+**Template details:**
+- **Name:** Website Monitoring
+- **Slug:** `website-monitoring`
+- **Category:** technical
+- **Avatar:** 🌐 (globe emoji)
+- **Color:** `#7C3AED` (purple)
+- **Published:** ✓ (featured)
+
+**Capabilities:**
+- Monitor website uptime and availability
+- Track response times and performance
+- Check SSL certificate validity and expiration
+- Alert on downtime or degraded performance
+- Generate availability reports and statistics
+
+**Default monitoring configuration** (documented in template instructions):
+- Monitoring interval: 5 minutes
+- Request timeout: 30 seconds
+- Response time threshold: 3000ms (alert if exceeded)
+- SSL expiry warning: 30 days before expiration
+- Downtime alert: Immediate on connection failure or 5xx errors
+- Performance degradation alert: >50% increase in response time over 1-hour average
+
+The template persona and instructions guide the agent to distinguish between
+temporary blips and serious outages, provide clear actionable reports with
+historical context, and include response codes, response times, SSL validity
+dates, and certificate issuer details in all reports.
+
+### Manual setup required
+- Run migration `065_website_monitoring_template.sql` in Supabase
+
+---
+
 ## Two-Step Invite Landing (Outlook Safe Links workaround)
 
 ### The problem
