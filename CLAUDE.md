@@ -5500,3 +5500,181 @@ session check.
 ### Manual setup required
 - Run migration `061_invite_tokens.sql` in Supabase
 - **Run migration `062_group_owner.sql` in Supabase** — adds `group_owner` to the role CHECK constraint, adds `groups.owner_user_id`, backfills owners from earliest admin / legacy `owner_id`, promotes them to `group_owner`, and splits the `user_suggestions` "users manage own" policy into separate INSERT / SELECT / UPDATE policies so feedback submissions stop failing with a `submitted_by` RLS error.
+
+---
+
+## Sage Phase 2: Interactive Requirements Frame & Escalation Workflows
+
+### Overview
+Completes the operator experience for the Sage↔Kaizen contract (Phase 1 foundation). Adds interactive status-return UI, conversational escalation workflows, and real-time progress tracking as Builder's code agent works on escalated findings.
+
+### What Was Implemented
+
+#### 1. Escalations API Route (`/api/admin/sage/escalations`)
+
+**GET** — Query escalations with filters:
+- `status` — comma-separated list (drafted, sent, acknowledged, acted, declined)
+- `priority` — comma-separated list (low, medium, high, critical)
+- `finding_id` — restrict to specific finding
+- `limit` — default 100, max 500
+
+**POST** — Create and send escalation to Builder:
+- Validates `trigger_type`, `summary`, `detail`, `suggested_priority`
+- Creates `sage_escalations` record with status `drafted`
+- Calls `postEscalation()` contract function (lane 4)
+- Updates status to `sent` on success, sets `sent_at`
+- If `finding_id` provided, updates finding status to `acting` and links via `escalation_id`
+- Role guard: only `super_admin` and `group_owner` can POST
+
+#### 2. Escalations Tab UI (`/admin/sage` → Escalations)
+
+Replaces Phase 1 placeholder with full interactive UI:
+
+**Filters:**
+- Status dropdown (All, Drafted, Sent, Acknowledged, Acted, Declined)
+- Priority dropdown (All, Low, Medium, High, Critical)
+- Live count of filtered escalations
+
+**EscalationCard component:**
+- Priority badge (Critical/High/Medium/Low with color coding)
+- Status badge with icons (Clock for sent/acknowledged, GitBranch for acted, CheckCircle for shipped)
+- Timeline visualization: Drafted → Sent → Acknowledged → Acted
+- Build progress panel showing:
+  - Branch name (with GitBranch icon)
+  - PR link (external link to Builder PR)
+  - Shipped indicator (when `build_progress.shipped === true`)
+- Expandable detail section with full escalation context
+- Link back to original finding in Investigations tab
+- Timestamps: created_at, sent_at
+- Finding context (severity, type) when available
+
+**Status-return tracking:**
+- Real-time display of escalation lifecycle
+- Visual timeline with step indicators (dot + label)
+- Active/completed state styling (violet for active, zinc for pending)
+- Build progress extracted from `sage_escalations.build_progress` JSONB field
+
+#### 3. Finding Card Escalation Button
+
+**Escalate to Builder button:**
+- Visible when finding status is `new` or `acknowledged` AND not yet escalated
+- Hidden when `finding.escalation_id` is set
+- Shows "Escalated" badge when linked to escalation
+- Opens escalation modal on click
+
+**EscalationModal component:**
+- Pre-fills finding title, observation, interpretation, recommendation
+- Allows operator to add custom context
+- Auto-sets priority based on finding severity:
+  - `critical` → `critical`
+  - `warning` → `high`
+  - `info`/`positive` → `medium`
+- Formats detail field with markdown headings for structured escalation
+- Submits to `/api/admin/sage/escalations` endpoint
+
+#### 4. Status-Return Integration
+
+The existing `/api/sage/status-return` inbound lane (Phase 1) already handles status updates from Builder. Phase 2 completes the loop by surfacing those updates in the UI:
+
+- `status` field tracks progression: drafted → sent → acknowledged → acted → declined
+- `build_progress` JSONB field stores:
+  - `branch` — Builder's feature branch name
+  - `pr_url` — Link to GitHub/GitLab PR
+  - `shipped` — Boolean flag when code is deployed
+- Timeline component reflects current status in real-time
+- Build progress panel shows actionable links (View PR, branch name)
+
+### Role Guards
+
+API route enforces access control:
+```typescript
+async function verifySuperAdminOrGroupOwner(userId: string): Promise<boolean> {
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('user_groups')
+    .select('role')
+    .eq('user_id', userId)
+    .in('role', ['super_admin', 'group_owner'])
+  return (data?.length ?? 0) > 0
+}
+```
+
+Applied to both GET and POST `/api/admin/sage/escalations`.
+
+### Contract Integration
+
+Escalation creation flow:
+1. Operator clicks "Escalate to Builder" on finding card
+2. Modal pre-fills finding context, operator adds custom notes
+3. POST `/api/admin/sage/escalations` creates record
+4. Calls `postEscalation(config, payload)` from `lib/sage-contract.ts`
+5. HMAC-signed POST to `${BUILDER_URL}/api/sage/inbound/escalation` (contract lane 4)
+6. On success, updates escalation status to `sent`, links finding via `escalation_id`
+7. Finding status transitions to `acting`
+
+Status-return updates (inbound from Builder):
+1. Builder POSTs to `/api/sage/status-return` with `{ escalation_id, status, build_progress }`
+2. Handler finds escalation by `kaizen_escalation_id`
+3. Updates `status` and `build_progress` fields
+4. UI reflects changes on next load (or via polling/SSE in future enhancement)
+
+### Files Created
+- `app/api/admin/sage/escalations/route.ts`
+
+### Files Modified
+- `app/(admin)/admin/sage/page.tsx` — Added:
+  - Escalations tab with filters and list
+  - `EscalationCard` component with status timeline
+  - `EscalationModal` component for escalation creation
+  - `StatusBadge` and `TimelineStep` subcomponents
+  - "Escalate to Builder" button in `FindingCard`
+  - State management for escalation modal, filters
+  - `handleEscalateFinding()` and `submitEscalation()` functions
+  - Added icons: `ExternalLink`, `CheckCircle2`, `Clock`, `GitBranch`, `Rocket`
+
+### UI/UX Patterns
+
+**Status progression visualization:**
+- Timeline uses connected dots (filled violet = completed, outlined violet = active, zinc = pending)
+- Status badges use color coding: blue (acted), amber (acknowledged), sky (sent), zinc (drafted/declined)
+- Shipped state overrides with emerald green badge + rocket icon
+
+**Build progress indicators:**
+- Violet-themed panel (`bg-violet-950/20 border-violet-800/30`)
+- Monospace font for branch names
+- External link icon for PRs (opens in new tab)
+- Shipped badge with rocket icon
+
+**Escalation modal:**
+- Fixed overlay with centered card (`z-50`)
+- Read-only finding preview in bordered panel
+- Textarea for operator context (optional)
+- Disabled state during submission
+- Auto-closes on success, shows toast notification
+
+### Phase 1 → Phase 2 Bridge
+
+Phase 1 established:
+- Database schema (`sage_escalations` table, `escalation_id` on findings)
+- Contract lanes (trigger, review-result, health, escalation, status-return)
+- HMAC authentication
+- Inbound `/api/sage/status-return` handler
+
+Phase 2 completes:
+- Escalations tab UI (replaces placeholder)
+- Escalation creation workflow (finding → modal → POST → contract)
+- Status-return visualization (timeline, build progress)
+- Operator-facing conversational surface (pre-filled context, custom notes)
+
+### Out of Scope (Future Enhancements)
+
+- Real-time polling/SSE for status updates (currently requires page refresh)
+- Admin "Mark Shipped" button (currently only Builder can update via status-return)
+- Escalation filtering by finding_id in UI (filter exists in API but not exposed)
+- Escalation search (by summary/detail text)
+- Bulk escalation actions
+- Escalation comments/notes thread
+
+### Pre-existing Build Issues
+
+The repo has a pre-existing build failure in `/app/(admin)/admin/assistant/page.tsx` (missing UI components from `@/components/ui/*`). This is OUT OF SCOPE per brief rules. Sage Phase 2 implementation does not introduce new build errors — all TypeScript types are validated and all contract functions are correctly imported.
