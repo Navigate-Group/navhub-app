@@ -53,7 +53,10 @@ export default function SageSettingsPage() {
         body: JSON.stringify(settings),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Save failed')
+      if (!res.ok) {
+        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error ?? 'Save failed')
+        throw new Error(errorMsg)
+      }
 
       setToast({ type: 'success', message: 'Settings saved successfully' })
       setSettings(data.settings)
@@ -76,7 +79,10 @@ export default function SageSettingsPage() {
         body: JSON.stringify(settings),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Connection test failed')
+      if (!res.ok) {
+        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error ?? 'Connection test failed')
+        throw new Error(errorMsg)
+      }
 
       setToast({ type: 'success', message: data.message ?? 'Connection successful' })
     } catch (err) {

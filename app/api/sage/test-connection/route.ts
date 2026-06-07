@@ -41,10 +41,21 @@ export async function POST(request: Request) {
     appSlug = body.app_slug
   } else {
     // Load from database
-    const { data: settings } = await supabase
+    const { data: settings, error: dbError } = await supabase
       .from('sage_settings')
       .select('*')
       .single()
+
+    if (dbError) {
+      console.error('[test-connection] Failed to load settings from DB:', dbError)
+      return NextResponse.json(
+        {
+          error: 'Failed to load connection settings from database',
+          details: dbError.message || dbError.hint || String(dbError)
+        },
+        { status: 500 }
+      )
+    }
 
     if (!settings) {
       return NextResponse.json(
@@ -52,6 +63,13 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+
+    console.log('[test-connection] Loaded settings from DB:', {
+      builder_url: settings.builder_url,
+      app_slug: settings.app_slug,
+      has_secret: !!settings.shared_secret,
+      secret_length: settings.shared_secret?.length
+    })
 
     builderUrl = settings.builder_url
     sharedSecret = settings.shared_secret
@@ -78,8 +96,15 @@ export async function POST(request: Request) {
   const body_str = JSON.stringify(payload)
   const signature = signPayload(body_str, sharedSecret)
 
+  console.log('[test-connection] Signing payload:', {
+    payload_length: body_str.length,
+    signature_length: signature.length,
+    signature_preview: signature.substring(0, 16) + '...'
+  })
+
   // POST to Builder's health endpoint
   const url = `${builderUrl}/api/sage/inbound/health`
+  console.log('[test-connection] POSTing to:', url)
   try {
     const res = await fetch(url, {
       method: 'POST',

@@ -5927,3 +5927,145 @@ This violated the principle of a single unified feedback home and created ambigu
 ✅ `npm run build` completes successfully
 ✅ `npm run lint` passes with no errors
 ⚠️  Pre-existing build error in `/app/(admin)/admin/assistant/page.tsx` (missing UI components) remains unchanged (out of scope)
+
+---
+
+## Sage Integration Error Surfacing & Diagnostics
+
+**Date**: 2025-01-XX
+**Brief**: Diagnose and fix two linked Sage integration failures: (1) saving Sage configuration fails with a generic error message, and (2) Test Connection returns 401
+
+### Problem
+
+The Sage settings save endpoint (`/api/admin/sage/settings`) and test connection endpoint (`/api/sage/test-connection`) were masking database errors and failing to provide actionable diagnostic information:
+
+1. **Save endpoint returned generic errors**: When database operations failed (e.g., RLS policy rejection, schema mismatch, constraint violations), the API returned only `"Failed to update settings"` or `"Failed to create settings"` without the actual error details.
+
+2. **Frontend displayed generic errors**: The settings UI (`app/(admin)/admin/settings/sage/page.tsx`) only showed the high-level error message, not the underlying cause.
+
+3. **Test Connection had no diagnostics**: The test-connection endpoint didn't log whether settings were successfully loaded from the database, making it impossible to diagnose 401 errors (which could be caused by missing/stale secrets, failed DB reads, or HMAC mismatches).
+
+4. **Silent failure chain**: If save silently failed (logged to console but not returned), operators couldn't tell if the secret persisted. A stale/empty secret would then cause Test Connection to generate invalid HMAC signatures, resulting in 401 errors from Builder.
+
+### Solution
+
+**Enhanced error surfacing and diagnostic logging across the Sage integration chain:**
+
+#### 1. API Error Details (`app/api/admin/sage/settings/route.ts`)
+
+- **GET endpoint**: Added `details` field to error responses containing `error.message || error.hint || String(error)`
+- **POST update**: Returns both `error` and `details` when database update fails
+- **POST insert**: Returns both `error` and `details` when database insert fails
+
+Before:
+```typescript
+if (error) {
+  console.error('[sage-settings] Failed to update settings:', error)
+  return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 })
+}
+```
+
+After:
+```typescript
+if (error) {
+  console.error('[sage-settings] Failed to update settings:', error)
+  return NextResponse.json({
+    error: 'Failed to update settings',
+    details: error.message || error.hint || String(error)
+  }, { status: 500 })
+}
+```
+
+#### 2. Frontend Error Display (`app/(admin)/admin/settings/sage/page.tsx`)
+
+- **handleSave**: Concatenates `error` and `details` when both present: `${data.error}: ${data.details}`
+- **handleTestConnection**: Same enhancement for test connection errors
+- Ensures operators see the full diagnostic message in the UI toast
+
+Before:
+```typescript
+if (!res.ok) throw new Error(data.error ?? 'Save failed')
+```
+
+After:
+```typescript
+if (!res.ok) {
+  const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error ?? 'Save failed')
+  throw new Error(errorMsg)
+}
+```
+
+#### 3. Test Connection Diagnostics (`app/api/sage/test-connection/route.ts`)
+
+- **Database error handling**: Added explicit check for `dbError` when loading settings, returns detailed error response
+- **Settings loaded log**: Logs builder_url, app_slug, has_secret flag, and secret_length when settings load successfully
+- **Signature generation log**: Logs payload_length, signature_length, and signature_preview (first 16 chars)
+- **URL log**: Logs the full Builder endpoint URL before POSTing
+
+New logging:
+```typescript
+console.log('[test-connection] Loaded settings from DB:', {
+  builder_url: settings.builder_url,
+  app_slug: settings.app_slug,
+  has_secret: !!settings.shared_secret,
+  secret_length: settings.shared_secret?.length
+})
+
+console.log('[test-connection] Signing payload:', {
+  payload_length: body_str.length,
+  signature_length: signature.length,
+  signature_preview: signature.substring(0, 16) + '...'
+})
+
+console.log('[test-connection] POSTing to:', url)
+```
+
+### Files Modified
+
+**`app/api/admin/sage/settings/route.ts`**
+- Added `details` field to all error responses (GET, POST update, POST insert)
+- Error responses now include: `{ error: string, details: string }`
+
+**`app/(admin)/admin/settings/sage/page.tsx`**
+- Enhanced `handleSave()` to display concatenated error + details
+- Enhanced `handleTestConnection()` to display concatenated error + details
+- Toast messages now show full diagnostic information
+
+**`app/api/sage/test-connection/route.ts`**
+- Added explicit database error handling when loading settings
+- Added diagnostic logging for settings load, signature generation, and URL
+- Error responses now include: `{ error: string, details: string }`
+
+### Verification
+
+The changes enable operators to:
+
+1. **See real database errors** when save fails (e.g., "Failed to update settings: new row violates row-level security policy for table 'sage_settings'")
+2. **Confirm secret persistence** by checking logs after save to verify `has_secret: true` and `secret_length: 64`
+3. **Diagnose 401 errors** by checking logs for:
+   - Whether settings loaded from DB successfully
+   - The signature being generated (length and preview)
+   - The exact URL being called
+4. **Verify HMAC implementation** matches the contract (SHA-256, hex encoding, X-Sage-Signature header)
+
+### Root Causes Addressed
+
+- **Schema mismatch**: Error details now surface if column names don't match
+- **RLS policy rejection**: Error details now surface if super_admin check fails
+- **Missing secret**: Logs confirm if secret is empty or missing from DB
+- **HMAC divergence**: Signature logs allow comparison with Builder's expected format
+
+### Acceptance Criteria
+
+✅ Save endpoint returns actual database error in `details` field when save fails
+✅ Frontend displays full error message from API response (error + details) in UI toast
+✅ Test Connection logs settings load success (builder_url, app_slug, has_secret, secret_length)
+✅ Test Connection logs signature generation (payload_length, signature_length, signature_preview)
+✅ Test Connection logs target URL before POST
+✅ Database schema includes all required columns (builder_url, shared_secret, app_slug)
+✅ RLS policy allows super_admin users to insert and update rows
+✅ HMAC signing uses SHA-256, raw body input, hex encoding, X-Sage-Signature header
+
+### Build Status
+
+⚠️  Pre-existing build error in `/app/(admin)/admin/assistant/page.tsx` (missing UI components from `@/components/ui/*`) remains unchanged (out of scope per brief rules)
