@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Search } from 'lucide-react'
+import { Search, ExternalLink, CheckCircle2, Clock, GitBranch, Rocket } from 'lucide-react'
 import type {
-  SageFinding, SageScan, SageSeverity, SageFindingStatus, SageActionType,
+  SageFinding, SageScan, SageSeverity, SageFindingStatus, SageActionType, SageEscalation,
 } from '@/lib/types'
 
 const SEVERITY_STYLE: Record<SageSeverity, { dot: string; tag: string; label: string }> = {
@@ -37,6 +37,7 @@ export default function AdminSagePage() {
   const [tab,       setTab]       = useState<Tab>('overview')
   const [findings,  setFindings]  = useState<SageFinding[]>([])
   const [scans,     setScans]     = useState<SageScan[]>([])
+  const [escalations, setEscalations] = useState<SageEscalation[]>([])
   const [groupMap,  setGroupMap]  = useState<Record<string, string>>({})
   const [loading,   setLoading]   = useState(true)
   const [status,    setStatus]    = useState<StatusFilter>('open')
@@ -50,6 +51,13 @@ export default function AdminSagePage() {
   const [periodDays, setPeriodDays] = useState(7)
   const [scanBusy,  setScanBusy]  = useState(false)
   const [toast,     setToast]     = useState<string | null>(null)
+
+  // Escalation state
+  const [escalationModalOpen, setEscalationModalOpen] = useState(false)
+  const [escalatingFinding, setEscalatingFinding] = useState<SageFinding | null>(null)
+  const [escalationBusy, setEscalationBusy] = useState(false)
+  const [escalationFilter, setEscalationFilter] = useState<string>('all')
+  const [escalationPriorityFilter, setEscalationPriorityFilter] = useState<string>('all')
 
   // Operator-driven investigation card — surfaced at the top of the page so
   // ops can submit a specific symptom for Sage to investigate without going
@@ -98,14 +106,65 @@ export default function AdminSagePage() {
     Promise.all([
       fetch(`/api/admin/sage/findings?${params.toString()}`).then(r => r.json()),
       fetch('/api/admin/sage/scans?limit=10').then(r => r.json()),
+      fetch('/api/admin/sage/escalations').then(r => r.json()),
     ])
-      .then(([fJson, sJson]) => {
+      .then(([fJson, sJson, eJson]) => {
         setFindings((fJson.data ?? []) as SageFinding[])
         setScans((sJson.data ?? []) as SageScan[])
+        setEscalations((eJson.data ?? []) as SageEscalation[])
       })
       .finally(() => setLoading(false))
   }
   useEffect(() => { loadAll() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status])
+
+  async function handleEscalateFinding(finding: SageFinding) {
+    setEscalatingFinding(finding)
+    setEscalationModalOpen(true)
+  }
+
+  async function submitEscalation(operatorContext: string) {
+    if (!escalatingFinding) return
+    setEscalationBusy(true)
+    try {
+      const res = await fetch('/api/admin/sage/escalations', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          finding_id: escalatingFinding.id,
+          trigger_type: 'admin_interaction',
+          summary: escalatingFinding.title,
+          detail: [
+            `**Finding:** ${escalatingFinding.title}`,
+            '',
+            `**Observation:** ${escalatingFinding.observation}`,
+            '',
+            `**Interpretation:** ${escalatingFinding.interpretation}`,
+            '',
+            escalatingFinding.recommendation ? `**Recommendation:** ${escalatingFinding.recommendation}` : '',
+            '',
+            operatorContext ? `**Operator Context:** ${operatorContext}` : '',
+          ].filter(Boolean).join('\n'),
+          suggested_priority: escalatingFinding.severity === 'critical' ? 'critical'
+                            : escalatingFinding.severity === 'warning' ? 'high'
+                            : 'medium',
+          source_context: {
+            scan_id: escalatingFinding.scan_id,
+            finding_id: escalatingFinding.id,
+          },
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Escalation failed')
+      setToast('Escalation sent to Builder')
+      setEscalationModalOpen(false)
+      setEscalatingFinding(null)
+      loadAll()
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Escalation failed')
+    } finally {
+      setEscalationBusy(false)
+    }
+  }
 
   // Load group id → name map once for resolving affected_groups UUIDs into
   // friendly names on each finding card.
@@ -349,15 +408,68 @@ export default function AdminSagePage() {
         </div>
       )}
 
-      {/* Tab: Escalations — placeholder for Phase 2 */}
+      {/* Tab: Escalations — Phase 2: Interactive Requirements frame */}
       {tab === 'escalations' && (
         <div className="space-y-4">
           <p className="text-xs text-zinc-400">
             Escalations sent to Builder's Kaizen, with status-return tracking.
           </p>
-          <p className="text-sm text-zinc-500">
-            Escalation UI coming in Phase 2 (interactive Requirements frame).
-          </p>
+
+          {/* Filters: Status and Priority */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={escalationFilter}
+              onChange={e => setEscalationFilter(e.target.value)}
+              className="text-xs h-8 px-2 rounded border border-zinc-700 bg-zinc-900 text-zinc-100"
+            >
+              <option value="all">All statuses</option>
+              <option value="drafted">Drafted</option>
+              <option value="sent">Sent</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="acted">Acted</option>
+              <option value="declined">Declined</option>
+            </select>
+            <select
+              value={escalationPriorityFilter}
+              onChange={e => setEscalationPriorityFilter(e.target.value)}
+              className="text-xs h-8 px-2 rounded border border-zinc-700 bg-zinc-900 text-zinc-100"
+            >
+              <option value="all">All priorities</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+            <span className="text-xs text-zinc-500 ml-auto">
+              {escalations.filter(e =>
+                (escalationFilter === 'all' || e.status === escalationFilter) &&
+                (escalationPriorityFilter === 'all' || e.suggested_priority === escalationPriorityFilter)
+              ).length} escalation{escalations.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          {/* Escalations list */}
+          {loading ? (
+            <p className="text-sm text-zinc-400">Loading…</p>
+          ) : escalations.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-zinc-800 p-10 text-center">
+              <p className="text-sm text-zinc-400">No escalations yet.</p>
+              <p className="text-xs text-zinc-500 mt-1">
+                Escalate critical findings from the Investigations tab to send them to Builder.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {escalations
+                .filter(e =>
+                  (escalationFilter === 'all' || e.status === escalationFilter) &&
+                  (escalationPriorityFilter === 'all' || e.suggested_priority === escalationPriorityFilter)
+                )
+                .map(e => (
+                  <EscalationCard key={e.id} escalation={e} findings={findings} />
+                ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -462,7 +574,7 @@ export default function AdminSagePage() {
       ) : (
         <div className="space-y-3">
           {visibleFindings.map(f => (
-            <FindingCard key={f.id} finding={f} groupMap={groupMap} onAction={patchFinding} />
+            <FindingCard key={f.id} finding={f} groupMap={groupMap} onAction={patchFinding} onEscalate={handleEscalateFinding} />
           ))}
         </div>
       ))}
@@ -488,6 +600,16 @@ export default function AdminSagePage() {
         </div>
       )}
 
+      {/* Escalation modal */}
+      {escalationModalOpen && escalatingFinding && (
+        <EscalationModal
+          finding={escalatingFinding}
+          onClose={() => { setEscalationModalOpen(false); setEscalatingFinding(null) }}
+          onSubmit={submitEscalation}
+          busy={escalationBusy}
+        />
+      )}
+
       {toast && (
         <div className="fixed bottom-4 right-4 px-3 py-2 rounded bg-zinc-800 border border-zinc-700 text-xs text-zinc-200">
           {toast}
@@ -498,11 +620,12 @@ export default function AdminSagePage() {
 }
 
 function FindingCard({
-  finding, groupMap, onAction,
+  finding, groupMap, onAction, onEscalate,
 }: {
   finding:  SageFinding
   groupMap: Record<string, string>
   onAction: (id: string, status: SageFindingStatus, dismissedReason?: string) => Promise<void>
+  onEscalate: (finding: SageFinding) => void
 }) {
   const [expanded, setExpanded] = useState(finding.severity === 'critical')
   const sev = SEVERITY_STYLE[finding.severity]
@@ -611,6 +734,18 @@ function FindingCard({
                 className="text-[11px] px-2 py-1 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
               >Dismiss</button>
             )}
+            {/* Escalate to Builder button — shown when finding is new/acknowledged and not yet escalated */}
+            {(finding.status === 'new' || finding.status === 'acknowledged') && !finding.escalation_id && (
+              <button
+                onClick={() => onEscalate(finding)}
+                className="text-[11px] px-2 py-1 rounded border border-violet-700 text-violet-300 hover:bg-violet-950/30"
+              >Escalate to Builder</button>
+            )}
+            {finding.escalation_id && (
+              <span className="text-[11px] px-2 py-1 rounded bg-violet-900/30 text-violet-400">
+                Escalated
+              </span>
+            )}
             <button
               onClick={() => void copyFinding()}
               className="text-[11px] px-2 py-1 rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800 ml-auto"
@@ -636,4 +771,276 @@ function formatDate(iso: string): string {
     day:   '2-digit', month: 'short', year: 'numeric',
     hour:  '2-digit', minute: '2-digit',
   })
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// EscalationCard — Status-return tracking UI (Phase 2)
+// ────────────────────────────────────────────────────────────────────────────
+
+function EscalationCard({
+  escalation,
+  findings,
+}: {
+  escalation: SageEscalation
+  findings:   SageFinding[]
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  // Find associated finding for context
+  const finding = findings.find(f => f.id === escalation.finding_id)
+
+  // Priority styling
+  const priorityStyle = escalation.suggested_priority === 'critical' ? 'bg-red-500/15 text-red-300 border-red-500/30'
+                       : escalation.suggested_priority === 'high'     ? 'bg-orange-500/15 text-orange-300 border-orange-500/30'
+                       : escalation.suggested_priority === 'medium'   ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                       : 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
+
+  // Build progress from status-return
+  const buildProgress = escalation.build_progress as { branch?: string; pr_url?: string; shipped?: boolean } | null
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${priorityStyle}`}>
+              {escalation.suggested_priority?.toUpperCase() ?? 'MEDIUM'}
+            </span>
+            <StatusBadge status={escalation.status} buildProgress={buildProgress} />
+            {escalation.trigger_type && (
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+                {escalation.trigger_type.replace('_', ' ')}
+              </span>
+            )}
+          </div>
+          <h3 className="text-sm font-semibold text-zinc-100">{escalation.summary}</h3>
+          <div className="text-[11px] text-zinc-500 flex items-center gap-2 flex-wrap">
+            <span>{formatDate(escalation.created_at)}</span>
+            {escalation.sent_at && (
+              <>
+                <span className="text-zinc-700">·</span>
+                <span>Sent {formatDate(escalation.sent_at)}</span>
+              </>
+            )}
+            {finding && (
+              <>
+                <span className="text-zinc-700">·</span>
+                <span className="capitalize">{finding.severity} finding</span>
+              </>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="text-[11px] text-zinc-500 hover:text-zinc-200"
+        >
+          {expanded ? 'Collapse' : 'Expand'}
+        </button>
+      </div>
+
+      {/* Status-return timeline (always visible) */}
+      <div className="flex items-center gap-2 text-[11px] border-t border-zinc-800 pt-3">
+        <TimelineStep label="Drafted" active completed />
+        <div className="h-px flex-1 bg-zinc-700" />
+        <TimelineStep label="Sent" active={escalation.status !== 'drafted'} completed={escalation.status !== 'drafted'} />
+        <div className="h-px flex-1 bg-zinc-700" />
+        <TimelineStep label="Acknowledged" active={escalation.status === 'acknowledged' || escalation.status === 'acted'} completed={escalation.status === 'acknowledged' || escalation.status === 'acted'} />
+        <div className="h-px flex-1 bg-zinc-700" />
+        <TimelineStep label="Acted" active={escalation.status === 'acted'} completed={escalation.status === 'acted'} />
+      </div>
+
+      {/* Build progress indicators */}
+      {buildProgress && (
+        <div className="flex items-center gap-3 text-xs text-zinc-300 bg-violet-950/20 border border-violet-800/30 rounded px-3 py-2">
+          {buildProgress.branch && (
+            <div className="flex items-center gap-1.5">
+              <GitBranch className="h-3.5 w-3.5 text-violet-400" />
+              <span className="font-mono text-violet-300">{buildProgress.branch}</span>
+            </div>
+          )}
+          {buildProgress.pr_url && (
+            <a
+              href={buildProgress.pr_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-violet-400 hover:text-violet-300"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              View PR
+            </a>
+          )}
+          {buildProgress.shipped && (
+            <div className="flex items-center gap-1.5 text-emerald-400">
+              <Rocket className="h-3.5 w-3.5" />
+              Shipped
+            </div>
+          )}
+        </div>
+      )}
+
+      {expanded && (
+        <div className="space-y-3 pt-2 border-t border-zinc-800">
+          <Section label="Detail" text={escalation.detail} />
+          {finding && (
+            <div className="pt-2">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Original Finding</p>
+              <button
+                onClick={() => {
+                  // Navigate to Investigations tab and highlight finding
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                }}
+                className="text-xs text-violet-400 hover:underline"
+              >
+                View in Investigations →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StatusBadge({
+  status,
+  buildProgress,
+}: {
+  status: string
+  buildProgress: { shipped?: boolean } | null
+}) {
+  if (buildProgress?.shipped) {
+    return (
+      <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-700/30 flex items-center gap-1">
+        <CheckCircle2 className="h-3 w-3" />
+        Shipped
+      </span>
+    )
+  }
+
+  const style = status === 'acted'        ? 'bg-blue-900/30 text-blue-400 border-blue-700/30'
+              : status === 'acknowledged' ? 'bg-amber-900/30 text-amber-400 border-amber-700/30'
+              : status === 'sent'         ? 'bg-sky-900/30 text-sky-400 border-sky-700/30'
+              : status === 'declined'     ? 'bg-zinc-800 text-zinc-500 border-zinc-700'
+              : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+
+  const icon = status === 'acted' ? <GitBranch className="h-3 w-3" />
+             : status === 'acknowledged' || status === 'sent' ? <Clock className="h-3 w-3" />
+             : null
+
+  return (
+    <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${style} flex items-center gap-1`}>
+      {icon}
+      {status}
+    </span>
+  )
+}
+
+function TimelineStep({
+  label,
+  active,
+  completed,
+}: {
+  label:     string
+  active:    boolean
+  completed: boolean
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className={`h-2 w-2 rounded-full ${
+        completed ? 'bg-violet-500' : active ? 'bg-violet-700' : 'bg-zinc-700'
+      }`} />
+      <span className={`text-[10px] whitespace-nowrap ${
+        completed ? 'text-violet-400' : active ? 'text-zinc-400' : 'text-zinc-600'
+      }`}>
+        {label}
+      </span>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// EscalationModal — Escalation creation form
+// ────────────────────────────────────────────────────────────────────────────
+
+function EscalationModal({
+  finding,
+  onClose,
+  onSubmit,
+  busy,
+}: {
+  finding:  SageFinding
+  onClose:  () => void
+  onSubmit: (operatorContext: string) => void
+  busy:     boolean
+}) {
+  const [operatorContext, setOperatorContext] = useState('')
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-100">Escalate to Builder</h2>
+            <p className="text-xs text-zinc-400 mt-1">
+              Send this finding to Builder's Kaizen for code-level resolution.
+            </p>
+          </div>
+
+          <div className="space-y-3 border border-zinc-800 rounded-lg p-4 bg-zinc-950/50">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Finding</p>
+              <p className="text-sm text-zinc-200 mt-1">{finding.title}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Observation</p>
+              <p className="text-xs text-zinc-300 mt-1">{finding.observation}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Interpretation</p>
+              <p className="text-xs text-zinc-300 mt-1">{finding.interpretation}</p>
+            </div>
+            {finding.recommendation && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500">Recommendation</p>
+                <p className="text-xs text-zinc-300 mt-1">{finding.recommendation}</p>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-zinc-200">
+              Additional context (optional)
+            </label>
+            <p className="text-[11px] text-zinc-500 mt-0.5 mb-2">
+              Provide any extra context, specific asks, or constraints for Builder.
+            </p>
+            <textarea
+              value={operatorContext}
+              onChange={e => setOperatorContext(e.target.value)}
+              placeholder="e.g. Prioritize fixing the auth flow issue before the mobile app rollout on Friday."
+              rows={4}
+              className="w-full px-3 py-2 rounded border border-zinc-700 bg-zinc-950 text-zinc-100 text-xs"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              onClick={onClose}
+              disabled={busy}
+              className="text-xs px-4 py-2 rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onSubmit(operatorContext)}
+              disabled={busy}
+              className="text-xs px-4 py-2 rounded bg-violet-500 text-zinc-950 font-semibold hover:bg-violet-400 disabled:opacity-50"
+            >
+              {busy ? 'Escalating…' : 'Escalate to Builder'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
