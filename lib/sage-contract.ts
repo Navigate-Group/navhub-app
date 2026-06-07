@@ -209,16 +209,41 @@ async function postToBuilder(
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * Load contract config from env vars, throw if missing.
+ * Load contract config from database (preferred) with env var fallback.
+ * Phase 1: Decouples connection config from deployment env vars.
  */
-export function getContractConfig(): OutboundConfig {
+export async function getContractConfig(): Promise<OutboundConfig> {
+  // Try database first
+  try {
+    // Dynamic import to avoid server-only module in edge/client contexts
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = createClient()
+
+    const { data: settings } = await supabase
+      .from('sage_settings')
+      .select('builder_url, shared_secret, app_slug')
+      .single()
+
+    if (settings && settings.builder_url && settings.shared_secret && settings.app_slug) {
+      return {
+        builderUrl: settings.builder_url,
+        sharedSecret: settings.shared_secret,
+        appSlug: settings.app_slug,
+      }
+    }
+  } catch (err) {
+    // Database read failed or no settings found — fall back to env vars
+    console.warn('[sage-contract] Database config unavailable, falling back to env vars:', err instanceof Error ? err.message : String(err))
+  }
+
+  // Fallback to env vars (backward compatibility during transition)
   const builderUrl   = process.env.BUILDER_URL
   const sharedSecret = process.env.SAGE_SHARED_SECRET
   const appSlug      = process.env.SAGE_APP_SLUG
 
-  if (!builderUrl)   throw new Error('BUILDER_URL not configured')
-  if (!sharedSecret) throw new Error('SAGE_SHARED_SECRET not configured')
-  if (!appSlug)      throw new Error('SAGE_APP_SLUG not configured')
+  if (!builderUrl)   throw new Error('BUILDER_URL not configured (check database or env vars)')
+  if (!sharedSecret) throw new Error('SAGE_SHARED_SECRET not configured (check database or env vars)')
+  if (!appSlug)      throw new Error('SAGE_APP_SLUG not configured (check database or env vars)')
 
   return { builderUrl, sharedSecret, appSlug }
 }

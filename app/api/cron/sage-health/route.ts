@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const config = getContractConfig()
+    const config = await getContractConfig()
     await postHealthPing(config)
 
     return NextResponse.json({

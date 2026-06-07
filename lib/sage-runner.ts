@@ -620,7 +620,7 @@ async function sendReviewResultToBuilder(
   ranAt:      string,
 ): Promise<void> {
   try {
-    const config = getContractConfig()
+    const config = await getContractConfig()
     const payload: ReviewResultPayload = {
       request_id:  requestId ?? null,
       app:         config.appSlug,
