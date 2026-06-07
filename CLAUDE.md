@@ -5850,3 +5850,80 @@ The intermediate `unknown` cast is TypeScript's escape hatch for intentional str
 ### Verification
 
 Confirmed via `node_modules/.bin/tsc --noEmit lib/sage-contract.ts` that all three errors are resolved. The file now compiles cleanly under TypeScript strict mode.
+
+---
+
+## Feedback Consolidation into Sage → Feedback Tab
+
+**Date**: 2025-01-07
+**Brief**: Consolidate user feedback into Sage → Feedback as the canonical feedback surface
+
+### Problem
+
+NavHub had two separate feedback surfaces:
+1. A standalone `/admin/suggestions` page with full feedback management UI
+2. The **Sage → Feedback** tab that only showed a redirect message to `/admin/suggestions`
+
+This violated the principle of a single unified feedback home and created ambiguity about where feedback data ownership lived — was it standalone or part of Sage's operational surface?
+
+### Solution
+
+**Consolidate all feedback into Sage → Feedback as the canonical feedback surface:**
+
+1. **Moved feedback UI into Sage tab**: The complete suggestions list (support requests + feature suggestions + user reports) now renders directly in the Sage → Feedback tab, layered with Sage's triage synthesis (disposition, reasoning, suggested response) and links to related investigations.
+
+2. **Deprecated `/admin/suggestions` route**: The standalone page is now a redirect to `/admin/sage#feedback`, maintaining backward compatibility with existing bookmarks and links.
+
+3. **Updated navigation**: The admin navbar "Feedback" link now points to `/admin/sage#feedback` instead of `/admin/suggestions`.
+
+4. **Hash-based tab routing**: The Sage page now detects `#feedback` in the URL and automatically opens the Feedback tab, ensuring direct links work correctly.
+
+### Files Modified
+
+**`app/(admin)/admin/sage/page.tsx`**
+- Added `EnrichedSuggestion` type and feedback filter constants
+- Added feedback state: `suggestions`, `feedbackFilter`, `feedbackLoading`, `busyIds`, `respondTo`
+- Added feedback loading function `loadFeedback()` that fetches from `/api/admin/suggestions`
+- Added feedback action handlers: `patchSuggestionStatus()`, `triageWithSage()`, `submitToSage()`
+- Added hash navigation handler to detect `#feedback` in URL and switch tabs
+- Replaced placeholder Feedback tab content with full feedback management UI (filters, suggestion cards, respond modal)
+- Added `FeedbackCard` component (displays suggestion with Sage triage overlay and action buttons)
+- Added `FeedbackBlock` helper component
+- Added `RespondModal` component (send responses to users)
+- Added `relativeDate()` helper function
+
+**`app/(admin)/admin/suggestions/page.tsx`**
+- Replaced entire page with a redirect component
+- Now automatically redirects to `/admin/sage#feedback` on mount
+- Displays a "Feedback has moved" message during redirect
+
+**`components/admin/AdminFeedbackNavLink.tsx`**
+- Changed `href` from `/admin/suggestions` to `/admin/sage#feedback`
+- Updated comment to reflect new destination
+
+### Data Flow
+
+- All feedback data continues to be stored in the `user_suggestions` table
+- API routes (`/api/admin/suggestions/*`) remain unchanged
+- The Sage → Feedback tab loads data via the existing `/api/admin/suggestions` endpoint
+- Sage triage, status updates, and user notifications all work through the existing API
+
+### Acceptance Criteria
+
+✅ Sage → Feedback tab displays the unified suggestions list with filters (Open, Submitted, Triaged, Acknowledged, Declined, Shipped, All)
+✅ All feedback management actions available: Triage with Sage, Submit to Sage, Acknowledge, Acting, Decline, Shipped, Send response
+✅ Sage triage synthesis (disposition, reasoning, suggested response) displays when present
+✅ `/admin/suggestions` route redirects to `/admin/sage#feedback`
+✅ Admin navbar "Feedback" link navigates to Sage → Feedback tab
+✅ Direct links to `/admin/sage#feedback` automatically open the Feedback tab
+✅ Unread badge on Feedback nav link continues to work (polls `/api/admin/suggestions?status=submitted`)
+
+### Why This Matters
+
+**Single unified feedback home**: Following the principle that "one feedback surface = Sage's operational area" ensures NavHub (and future apps) don't splinter user voice into multiple inboxes. Sage becomes the single place admins triage, respond to, and escalate feedback, while retaining all the raw data Sage needs to synthesize context.
+
+### Build Status
+
+✅ `npm run build` completes successfully
+✅ `npm run lint` passes with no errors
+⚠️  Pre-existing build error in `/app/(admin)/admin/assistant/page.tsx` (missing UI components) remains unchanged (out of scope)
