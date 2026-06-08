@@ -16,6 +16,11 @@ import { verifyHmac } from '@/lib/sage-contract'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { runSageScan } from '@/lib/sage-runner'
 
+// Extend NextRequest to include Vercel's waitUntil method
+interface VercelNextRequest extends NextRequest {
+  waitUntil?: (promise: Promise<unknown>) => void
+}
+
 interface AgentRequest {
   lane: string
   app: string
@@ -49,7 +54,7 @@ export async function GET() {
 /**
  * POST /api/sage/agent — Inbound agent lanes from Builder
  */
-export async function POST(req: NextRequest) {
+export async function POST(req: VercelNextRequest) {
   console.log('[sage-agent] Received request:', req.url)
 
   // Read signature header (Builder uses x-builder-signature)
@@ -120,7 +125,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (payload.lane === 'trigger') {
-    return handleTrigger(payload as TriggerRequest, settings.app_slug)
+    return handleTrigger(payload as TriggerRequest, settings.app_slug, req)
   }
 
   if (payload.lane === 'status_return') {
@@ -155,6 +160,7 @@ function handlePing(appSlug: string): NextResponse {
 async function handleTrigger(
   payload: TriggerRequest,
   appSlug: string,
+  req: VercelNextRequest,
 ): Promise<NextResponse> {
   console.log('[sage-agent] Trigger review:', payload.review_type)
 
@@ -166,8 +172,8 @@ async function handleTrigger(
     ts: new Date().toISOString(),
   })
 
-  // Queue async review
-  setImmediate(async () => {
+  // Queue async review using waitUntil to ensure completion on Vercel serverless
+  const reviewPromise = (async () => {
     try {
       const scanId = await runSageScan(
         payload.review_type,
@@ -184,7 +190,15 @@ async function handleTrigger(
     } catch (err) {
       console.error('[sage-agent] Trigger failed:', err)
     }
-  })
+  })()
+
+  // Use waitUntil to ensure the review completes even after the response is sent
+  if (req.waitUntil) {
+    req.waitUntil(reviewPromise)
+  } else {
+    // Fallback for local development (non-Vercel)
+    reviewPromise.catch(err => console.error('[sage-agent] Unhandled review error:', err))
+  }
 
   return ackResponse
 }
