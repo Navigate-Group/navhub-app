@@ -62,8 +62,9 @@ export interface TriggerReviewPayload {
 }
 
 export interface ReviewResultPayload {
+  source_app:   string
+  lane:         'review_result'
   request_id?:  string | null
-  app:          string
   review_type:  'weekly' | 'daily' | 'adhoc' | 'alert' | 'requested'
   summary:      string
   findings:     Array<{
@@ -79,7 +80,8 @@ export interface ReviewResultPayload {
 }
 
 export interface HealthPayload {
-  app:            string
+  source_app:     string
+  lane:           'health'
   status:         'healthy' | 'degraded' | 'error'
   last_review_at: string | null
   sage_version:   string
@@ -87,7 +89,8 @@ export interface HealthPayload {
 }
 
 export interface EscalationPayload {
-  app:               string
+  source_app:        string
+  lane:              'escalation'
   trigger_type:      'review' | 'user_report' | 'suggestion' | 'admin_interaction'
   summary:           string
   detail:            string
@@ -127,9 +130,14 @@ interface OutboundConfig {
  */
 export async function postReviewResult(
   config:  OutboundConfig,
-  payload: ReviewResultPayload,
+  payload: Omit<ReviewResultPayload, 'source_app' | 'lane'>,
 ): Promise<void> {
-  await postToBuilder(config, '/api/sage/inbound/review-result', payload as unknown as Record<string, unknown>)
+  const fullPayload: ReviewResultPayload = {
+    source_app: config.appSlug,
+    lane: 'review_result',
+    ...payload,
+  }
+  await postToBuilder(config, '/api/sage/inbound', fullPayload as unknown as Record<string, unknown>)
 }
 
 /**
@@ -138,13 +146,14 @@ export async function postReviewResult(
  */
 export async function postHealthPing(config: OutboundConfig): Promise<void> {
   const payload: HealthPayload = {
-    app:            config.appSlug,
+    source_app:     config.appSlug,
+    lane:           'health',
     status:         'healthy',
     last_review_at: null, // TODO: query sage_scans for last completed_at
     sage_version:   SAGE_VERSION,
     ts:             new Date().toISOString(),
   }
-  await postToBuilder(config, '/api/sage/inbound/health', payload as unknown as Record<string, unknown>)
+  await postToBuilder(config, '/api/sage/inbound', payload as unknown as Record<string, unknown>)
 }
 
 /**
@@ -153,9 +162,14 @@ export async function postHealthPing(config: OutboundConfig): Promise<void> {
  */
 export async function postEscalation(
   config:  OutboundConfig,
-  payload: EscalationPayload,
+  payload: Omit<EscalationPayload, 'source_app' | 'lane'>,
 ): Promise<void> {
-  await postToBuilder(config, '/api/sage/inbound/escalation', payload as unknown as Record<string, unknown>)
+  const fullPayload: EscalationPayload = {
+    source_app: config.appSlug,
+    lane: 'escalation',
+    ...payload,
+  }
+  await postToBuilder(config, '/api/sage/inbound', fullPayload as unknown as Record<string, unknown>)
 }
 
 /**
@@ -176,9 +190,9 @@ async function postToBuilder(
       const res = await fetch(url, {
         method:  'POST',
         headers: {
-          'Content-Type':      'application/json',
-          'X-Sage-Signature':  sig,
-          'X-Sage-Timestamp':  new Date().toISOString(),
+          'Content-Type':        'application/json',
+          'x-builder-signature': sig,
+          'X-Sage-Timestamp':    new Date().toISOString(),
         },
         body,
         signal: AbortSignal.timeout(30_000),
