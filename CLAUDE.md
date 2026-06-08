@@ -6119,3 +6119,82 @@ The changes enable operators to:
 ### Build Status
 
 ⚠️  Pre-existing build error in `/app/(admin)/admin/assistant/page.tsx` remains unchanged (out of scope)
+
+## 2025-01-XX — Implement Builder → NavHub sage agent endpoint (`/api/sage/agent`)
+
+**Issue**: NavHub's `/api/sage/agent` endpoint existed but failed Builder's ping with 401 because it read the wrong signature header name (`x-sage-signature` instead of `x-builder-signature`) and didn't implement the full lane contract expected by Builder's dispatch system.
+
+**Root Cause**: The endpoint was implemented with the inbound contract (used by Kaizen/Builder sending TO NavHub) but needed to implement the reverse direction (Builder dispatching agent commands TO NavHub) with different header conventions and lane structure.
+
+**Solution**: Complete rewrite of `/api/sage/agent/route.ts` to implement all three lanes per Builder's dispatch contract:
+
+### Changes Made
+
+**`app/api/sage/agent/route.ts`** — Full rewrite
+
+1. **Fixed signature verification**:
+   - Changed from `x-sage-signature` to `x-builder-signature` header (line 56)
+   - Continues to verify HMAC over raw request body bytes using same shared secret
+   - Uses database-sourced shared secret for consistency
+
+2. **Changed request field from `action` to `lane`**:
+   - Updated interface to use `lane` field (lines 20-21)
+   - All routing logic now checks `payload.lane` (lines 118-128)
+
+3. **Implemented three lanes**:
+
+   **Ping lane** (lines 141-150):
+   ```json
+   {
+     "lane": "health",
+     "source_app": "<app_slug>",
+     "status": "ok",
+     "sage_version": "<app_slug>-sage-1.0.0",
+     "ts": "<ISO8601>"
+   }
+   ```
+
+   **Trigger lane** (lines 155-190):
+   - Immediately returns HTTP 200 ack with `lane: 'ack'`, `status: 'queued'`
+   - Queues async review using `runSageScan()` with 7-day default period
+   - Review result POSTed back to Builder by existing sage-runner completion hook
+
+   **Status_return lane** (lines 195-205):
+   - Returns HTTP 200 ack for Phase 1 (no database updates yet)
+
+4. **Added GET handler** (lines 42-47):
+   - Returns 401 for all GET requests (requires signature)
+
+5. **Correct HTTP status codes**:
+   - 200 for success
+   - 401 for missing/invalid signature
+   - 400 for unknown lane
+   - 500 for server configuration errors
+
+### Key Implementation Details
+
+- **Signature auth is the sole gate**: The endpoint does NOT validate the `app` UUID field as a slug or branch on it — signature verification using the shared secret is the only authentication mechanism.
+- **Raw body verification**: Signature is computed over the exact raw request body bytes received (via `req.text()`), not re-serialized JSON.
+- **Response format**: All lanes return the flat envelope structure with exact field names (`lane`, `source_app`, `status`, `sage_version`, `ts`).
+- **Async review handling**: Trigger lane uses `setImmediate()` to queue the review asynchronously, returning immediately so Builder doesn't wait.
+
+### Acceptance Criteria
+
+✅ GET /api/sage/agent with no X-Builder-Signature header returns 401
+✅ POST /api/sage/agent with invalid X-Builder-Signature returns 401
+✅ POST /api/sage/agent with valid signature and `{"lane": "ping", ...}` returns HTTP 200 with exact format
+✅ POST /api/sage/agent with valid signature and `{"lane": "unknown", ...}` returns HTTP 400
+✅ POST /api/sage/agent with valid signature and `{"lane": "trigger", ...}` returns HTTP 200 ack, queues async review
+✅ POST /api/sage/agent with valid signature and `{"lane": "status_return", ...}` returns HTTP 200 ack
+✅ Signature verification uses HMAC-SHA256 over raw request body bytes with Sage shared secret
+✅ No new TypeScript errors or lint failures
+
+### Build Status
+
+✅ ESLint: No warnings or errors
+⚠️  Pre-existing build error in `/app/(admin)/admin/assistant/page.tsx` remains unchanged (out of scope)
+
+### Impact
+
+This fix unblocks Builder's "Test / Ping" feature for NavHub, proving the reverse authentication works. Once this is deployed, Builder can trigger real reviews end-to-end via the agent dispatch system.
+
