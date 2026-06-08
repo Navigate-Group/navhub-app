@@ -7,7 +7,7 @@ import { signPayload } from '@/lib/sage-contract'
  *
  * Accepts connection config in the request body (for testing unsaved changes)
  * or uses saved database settings. Makes an authenticated health ping to
- * Builder's /api/sage/inbound/health endpoint to verify the connection.
+ * Builder's /api/sage/inbound endpoint to verify the connection.
  */
 export async function POST(request: Request) {
   const supabase = createClient()
@@ -102,8 +102,8 @@ export async function POST(request: Request) {
     signature_preview: signature.substring(0, 16) + '...'
   })
 
-  // POST to Builder's health endpoint
-  const url = `${builderUrl}/api/sage/inbound/health`
+  // POST to Builder's inbound endpoint
+  const url = `${builderUrl}/api/sage/inbound`
   console.log('[test-connection] POSTing to:', url)
   try {
     const res = await fetch(url, {
