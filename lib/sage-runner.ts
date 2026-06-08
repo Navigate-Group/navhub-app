@@ -19,7 +19,6 @@ import {
   getContractConfig,
   getSageVersion,
   postReviewResult,
-  type ReviewResultPayload,
 } from '@/lib/sage-contract'
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'

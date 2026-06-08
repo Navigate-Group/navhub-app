@@ -2,7 +2,6 @@ import { NextResponse }      from 'next/server'
 import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getContractConfig, postEscalation } from '@/lib/sage-contract'
-import type { EscalationPayload } from '@/lib/sage-contract'
 
 export const runtime = 'nodejs'
 
