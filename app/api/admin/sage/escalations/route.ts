@@ -134,8 +134,7 @@ export async function POST(request: Request) {
     // Send escalation to Builder via contract lane 4
     try {
       const config = await getContractConfig()
-      const payload: EscalationPayload = {
-        app: config.appSlug,
+      const payload = {
         trigger_type,
         summary,
         detail,

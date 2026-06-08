@@ -86,7 +86,8 @@ export async function POST(request: Request) {
 
   // Build health ping payload
   const payload = {
-    app: appSlug,
+    source_app: appSlug,
+    lane: 'health',
     status: 'healthy',
     last_review_at: null,
     sage_version: '1.0.0-phase1',
@@ -110,7 +111,7 @@ export async function POST(request: Request) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Sage-Signature': signature,
+        'x-builder-signature': signature,
         'X-Sage-Timestamp': new Date().toISOString(),
       },
       body: body_str,

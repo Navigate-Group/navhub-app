@@ -621,9 +621,8 @@ async function sendReviewResultToBuilder(
 ): Promise<void> {
   try {
     const config = await getContractConfig()
-    const payload: ReviewResultPayload = {
+    const payload = {
       request_id:  requestId ?? null,
-      app:         config.appSlug,
       review_type: scanType,
       summary,
       findings:    findings.slice(0, 20).map(f => ({
