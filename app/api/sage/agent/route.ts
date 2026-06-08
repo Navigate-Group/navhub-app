@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyHmac } from '@/lib/sage-contract'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { runSageScan } from '@/lib/sage-runner'
 
 interface AgentRequest {
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Fetch shared secret from database
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const { data: settings, error: dbError } = await supabase
     .from('sage_settings')
     .select('shared_secret, app_slug')
