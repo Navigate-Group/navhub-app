@@ -307,7 +307,7 @@ export default function AdminProviderDefaultsPage() {
           <div className="flex-1 text-sm text-zinc-300 space-y-1">
             <p className="font-medium text-amber-400">Fallback only — not for group agents</p>
             <p className="text-zinc-400">
-              These keys are used <strong>only</strong> for admin-level Sage and Assistant when groups haven't configured their own providers.
+              These keys are used <strong>only</strong> for admin-level Sage and Assistant when groups haven&apos;t configured their own providers.
               Group agents always require explicit per-group provider configuration in Settings → Agents → Provider API Keys.
             </p>
           </div>
