@@ -7,28 +7,7 @@ import { Input }  from '@/components/ui/input'
 import { Label }  from '@/components/ui/label'
 import { Badge }  from '@/components/ui/badge'
 import { cn }     from '@/lib/utils'
-
-interface AssistantConfig {
-  id?:                  string
-  persona_name:         string
-  persona_tone?:        string
-  persona_instructions: string | null
-  scope_text:           string | null
-  knowledge_text:       string | null
-  restrictions:         string | null
-  is_active?:           boolean
-  updated_at?:          string
-}
-
-interface KnowledgeDoc {
-  id:             string
-  group_id:       string | null
-  document_id:    string | null
-  file_path:      string | null
-  file_name:      string
-  file_type:      string | null
-  document_title: string | null
-}
+import { AssistantConfig, KnowledgeDoc } from '@/lib/types'
 
 interface GroupRow {
   id:                string

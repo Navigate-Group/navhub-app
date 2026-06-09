@@ -843,6 +843,29 @@ export interface GroupAgentKnowledgeDocument {
   document_title?: string | null
 }
 
+// ── Assistant configuration (admin) ──
+export interface AssistantConfig {
+  id?:                  string
+  persona_name:         string
+  persona_tone?:        string
+  persona_instructions: string | null
+  scope_text:           string | null
+  knowledge_text:       string | null
+  restrictions:         string | null
+  is_active?:           boolean
+  updated_at?:          string
+}
+
+export interface KnowledgeDoc {
+  id:             string
+  group_id:       string | null
+  document_id:    string | null
+  file_path:      string | null
+  file_name:      string
+  file_type:      string | null
+  document_title: string | null
+}
+
 export interface AgentKnowledgeDocument {
   id:              string
   agent_id:        string

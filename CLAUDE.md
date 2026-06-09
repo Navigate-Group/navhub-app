@@ -6437,3 +6437,28 @@ See `SAGE_DELIVERY_VERIFICATION.md` for detailed flow diagrams, testing commands
 
 This fix ensures that triggered reviews actually run and post results back to Builder. The `waitUntil` pattern is the correct approach for Vercel's serverless runtime and is now documented as the standard pattern for deferred work in Next.js API routes deployed to Vercel.
 
+---
+
+## Recent Changes (June 2026)
+
+### Type Refactoring: Assistant Configuration Types
+
+**Date**: June 9, 2026
+**Scope**: Type hygiene improvement for assistant configuration system
+
+**Changes**:
+- Exported `AssistantConfig` and `KnowledgeDoc` interfaces from `lib/types.ts` (lines 847-867)
+- Refactored `/app/(admin)/admin/assistant/page.tsx` to import these types instead of defining them locally
+- Removed duplicate local type definitions (22 lines)
+
+**Files Modified**:
+- `lib/types.ts`: Added 2 new exported interfaces
+- `app/(admin)/admin/assistant/page.tsx`: Removed local interfaces, added import
+
+**Impact**:
+- These types are now available for import across the codebase
+- Improves type consistency for assistant configuration API and UI
+- No functional changes; pure refactoring
+
+**Note**: Pre-existing build error in the page file (module resolution for `@/components/ui/*`) is unrelated to this change and remains out of scope.
+
