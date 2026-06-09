@@ -14,6 +14,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { decrypt }          from '@/lib/encryption'
 import type { SageScanType, SageSeverity, SageActionType, SageFindingType } from '@/lib/types'
 import {
   getContractConfig,
@@ -417,7 +418,26 @@ After all findings, end with:
 // ────────────────────────────────────────────────────────────────────────────
 
 async function callClaudeForSage(brief: string): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  // Resolve API key: superadmin_provider_configs → env
+  const admin = createAdminClient()
+  let apiKey: string | undefined
+
+  // Check superadmin default Anthropic config
+  const { data: superRow } = await admin
+    .from('superadmin_provider_configs')
+    .select('api_key_encrypted')
+    .eq('provider', 'anthropic')
+    .eq('is_active', true)
+    .maybeSingle()
+  if (superRow) {
+    try { apiKey = decrypt(superRow.api_key_encrypted as string) } catch { /* keep undefined */ }
+  }
+
+  // Fall back to env
+  if (!apiKey) {
+    apiKey = process.env.ANTHROPIC_API_KEY
+  }
+
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured')
 
   const controller = new AbortController()

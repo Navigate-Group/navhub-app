@@ -6462,3 +6462,78 @@ This fix ensures that triggered reviews actually run and post results back to Bu
 
 **Note**: Pre-existing build error in the page file (module resolution for `@/components/ui/*`) is unrelated to this change and remains out of scope.
 
+
+---
+
+## Implementation: Superadmin Provider Defaults (Migration 067)
+
+**Date**: June 9, 2026
+**Scope**: Platform-wide default provider API keys for Sage and Assistant fallback
+
+**Changes**:
+
+### Database
+- **Migration 067**: Created `superadmin_provider_configs` table
+  - Columns: id, provider (unique), api_key_encrypted, base_url, is_active, created_at, updated_at
+  - Supports: anthropic, openai, google, mistral, custom providers
+  - Platform-wide (no group_id) — superadmin-managed only
+  - Indexed on (provider, is_active) for fast lookups
+
+### API Routes (Superadmin-only)
+- **POST /api/admin/provider-configs**: Upsert provider API key (encrypts via `encrypt()`)
+- **GET /api/admin/provider-configs**: List all providers with is_configured flag (keys masked)
+- **DELETE /api/admin/provider-configs/{provider}**: Soft-deactivate (sets is_active=false)
+- **POST /api/admin/provider-configs/{provider}/test**: Test connection to provider API
+- All routes enforce super_admin role via RLS check
+
+### Admin UI
+- **Page**: `/admin/settings/providers` (new)
+- Matches group provider settings UX (from Settings → Agents → Provider API Keys)
+- Displays warning banner: "Fallback only — not for group agents"
+- Provider cards with Add/Edit/Test/Remove actions
+- Modal editor with API key input (masked), base URL (for custom), test connection button
+
+### Fallback Logic
+Updated three consumers to check superadmin configs when group config is missing:
+
+1. **Agent Runner** (`lib/agent-runner.ts`):
+   - Priority: group_provider_configs → group_model_configs (legacy) → superadmin_provider_configs → env
+   - Only applies when agent has ai_provider set but group hasn't configured it
+
+2. **Assistant** (`app/api/assistant/chat/route.ts`):
+   - Priority: group_provider_configs (Anthropic) → superadmin_provider_configs → ANTHROPIC_API_KEY env
+   - Uses same decrypt() function
+
+3. **Sage Runner** (`lib/sage-runner.ts`):
+   - Priority: superadmin_provider_configs (Anthropic) → ANTHROPIC_API_KEY env
+   - Admin-only operation (no group context)
+
+### Governance
+- **Group agents**: Never auto-populate from superadmin defaults — explicit group-level provider configuration required
+- **Admin Sage + Assistant**: Use superadmin defaults as fallback when group hasn't configured providers
+- **Encryption**: Uses same `encrypt()`/`decrypt()` as group-level configs (AES-256-GCM via NAVHUB_ENCRYPTION_KEY)
+
+**Files Created**:
+- `supabase/migrations/067_superadmin_provider_configs.sql`
+- `app/api/admin/provider-configs/route.ts`
+- `app/api/admin/provider-configs/[provider]/route.ts`
+- `app/api/admin/provider-configs/[provider]/test/route.ts`
+- `app/(admin)/admin/settings/providers/page.tsx`
+
+**Files Modified**:
+- `app/(admin)/admin/settings/page.tsx`: Added "Provider Defaults" card linking to new page
+- `lib/agent-runner.ts`: Added superadmin config fallback (lines 1557-1569)
+- `app/api/assistant/chat/route.ts`: Added superadmin config fallback (lines 151-186)
+- `lib/sage-runner.ts`: Added superadmin config fallback in callClaudeForSage (lines 420-441)
+
+**Impact**:
+- Platform operators can now manage default AI provider keys post-deployment
+- Eliminates reliance on hardcoded env vars for admin-level agents
+- Groups without provider configs automatically inherit superadmin defaults for Assistant/Sage
+- Clear separation: group agents remain group-scoped; only admin features use fallback
+
+**Build Status**:
+- Pre-existing build error in `app/(admin)/admin/assistant/page.tsx` (module resolution for `@/components/ui/*`)
+- This error is unrelated to the changes in this implementation
+- All new files have valid syntax and TypeScript structure
+

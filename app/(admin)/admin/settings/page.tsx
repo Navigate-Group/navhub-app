@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Settings, Link2 } from 'lucide-react'
+import { Settings, Link2, KeyRound } from 'lucide-react'
 
 export default function AdminSettingsPage() {
   return (
@@ -13,6 +13,24 @@ export default function AdminSettingsPage() {
 
       {/* Settings categories */}
       <div className="grid gap-4 md:grid-cols-2">
+        {/* Provider Defaults */}
+        <Link
+          href="/admin/settings/providers"
+          className="block p-6 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/60 transition-colors"
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20">
+              <KeyRound className="h-5 w-5 text-blue-400" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-sm font-semibold text-zinc-100">Provider Defaults</h2>
+              <p className="text-xs text-zinc-400 mt-1">
+                Platform-wide default API keys for Sage and Assistant fallback
+              </p>
+            </div>
+          </div>
+        </Link>
+
         {/* Sage Connection Settings */}
         <Link
           href="/admin/settings/sage"
