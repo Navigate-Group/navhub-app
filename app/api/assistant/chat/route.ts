@@ -2,6 +2,7 @@ import { NextResponse }    from 'next/server'
 import { cookies }         from 'next/headers'
 import { createClient }    from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { decrypt }         from '@/lib/encryption'
 import { buildSystemPrompt, extractBrief, extractQuestion } from '@/lib/assistant'
 import type { AssistantContext } from '@/lib/assistant'
 
@@ -147,7 +148,41 @@ export async function POST(request: Request) {
   const activeGroupId = cookieStore.get('active_group_id')?.value
   if (!activeGroupId) return NextResponse.json({ error: 'No active group' }, { status: 400 })
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  // ── Resolve API key (group → superadmin → env) ─────────────────────────────
+  // Priority: 1) group_provider_configs, 2) superadmin_provider_configs, 3) env
+  const admin = createAdminClient()
+  let apiKey: string | undefined
+
+  // Check group-level Anthropic config first
+  const { data: groupProvRow } = await admin
+    .from('group_provider_configs')
+    .select('api_key_encrypted')
+    .eq('group_id', activeGroupId)
+    .eq('provider', 'anthropic')
+    .eq('is_active', true)
+    .maybeSingle()
+  if (groupProvRow) {
+    try { apiKey = decrypt(groupProvRow.api_key_encrypted as string) } catch { /* keep undefined */ }
+  }
+
+  // Fall back to superadmin default if group doesn't have one
+  if (!apiKey) {
+    const { data: superRow } = await admin
+      .from('superadmin_provider_configs')
+      .select('api_key_encrypted')
+      .eq('provider', 'anthropic')
+      .eq('is_active', true)
+      .maybeSingle()
+    if (superRow) {
+      try { apiKey = decrypt(superRow.api_key_encrypted as string) } catch { /* keep undefined */ }
+    }
+  }
+
+  // Final fallback to env
+  if (!apiKey) {
+    apiKey = process.env.ANTHROPIC_API_KEY
+  }
+
   if (!apiKey) return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 })
 
   let body: ChatRequestBody
@@ -183,7 +218,6 @@ export async function POST(request: Request) {
   }
   let merged: CfgRow = {}
   try {
-    const admin = createAdminClient()
     const [platformRes, groupRes] = await Promise.all([
       admin
         .from('assistant_config')

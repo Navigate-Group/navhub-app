@@ -1496,7 +1496,8 @@ export async function executeAgentRun(
     //      group_provider_configs entry for the API key.
     //   2. Legacy: agent.model_config_id → group_model_configs (migration 042).
     //   3. Legacy: group default in group_model_configs.
-    //   4. Final fallback: env var ANTHROPIC_API_KEY (handled inside callClaude).
+    //   4. Superadmin provider defaults (for admin Sage + Assistant fallback).
+    //   5. Final fallback: env var ANTHROPIC_API_KEY (handled inside callClaude).
     let cfgProvider = 'anthropic'
     let cfgModelName = agent.model as string
     let cfgApiKey: string | undefined
@@ -1550,6 +1551,20 @@ export async function executeAgentRun(
           cfgModelName = cfgRow.model_name
         }
         try { cfgApiKey = decrypt(cfgRow.api_key_encrypted) } catch { /* keep undefined */ }
+      }
+    }
+
+    if (!cfgApiKey && aiProvider) {
+      // Superadmin fallback: check superadmin_provider_configs for this provider
+      // (used only when group has not configured the provider)
+      const { data: superRow } = await admin
+        .from('superadmin_provider_configs')
+        .select('api_key_encrypted, base_url')
+        .eq('provider', aiProvider)
+        .eq('is_active', true)
+        .maybeSingle()
+      if (superRow) {
+        try { cfgApiKey = decrypt(superRow.api_key_encrypted as string) } catch { /* keep undefined */ }
       }
     }
 
