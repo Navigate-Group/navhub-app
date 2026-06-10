@@ -21,12 +21,12 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Check superadmin role
-  const { data: membership } = await supabase
+  const { data: memberships } = await supabase
     .from('user_groups')
     .select('role')
     .eq('user_id', session.user.id)
-    .single()
-  if (!membership || membership.role !== 'super_admin') {
+    .eq('role', 'super_admin')
+  if (!memberships || memberships.length === 0) {
     return NextResponse.json({ error: 'Superadmin access required' }, { status: 403 })
   }
 
@@ -65,12 +65,12 @@ export async function POST(req: Request) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Check superadmin role
-  const { data: membership } = await supabase
+  const { data: memberships } = await supabase
     .from('user_groups')
     .select('role')
     .eq('user_id', session.user.id)
-    .single()
-  if (!membership || membership.role !== 'super_admin') {
+    .eq('role', 'super_admin')
+  if (!memberships || memberships.length === 0) {
     return NextResponse.json({ error: 'Superadmin access required' }, { status: 403 })
   }
 
