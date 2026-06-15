@@ -80,7 +80,7 @@ export async function POST(req: Request) {
   if (!password?.trim()) return NextResponse.json({ error: 'Password is required.' }, { status: 400 })
   if (!group_id)         return NextResponse.json({ error: 'Group is required.' }, { status: 400 })
 
-  const validRoles = ['group_owner', 'group_admin', 'manager', 'viewer']
+  const validRoles = ['group_owner', 'group_admin', 'manager', 'staff', 'viewer']
   const userRole   = validRoles.includes(role) ? role : 'viewer'
 
   // Create auth user

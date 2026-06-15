@@ -2,7 +2,7 @@ import { NextResponse }      from 'next/server'
 import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const VALID_ROLES = ['super_admin', 'group_owner', 'group_admin', 'manager', 'viewer']
+const VALID_ROLES = ['super_admin', 'group_owner', 'group_admin', 'manager', 'staff', 'viewer']
 
 // ─── POST /api/groups/[id]/join ───────────────────────────────────────────────
 // Called from /auth/accept-invite after the user has set their password.
@@ -35,7 +35,7 @@ export async function POST(
   // Verify a pending invite exists for this email + group
   const { data: invite, error: inviteErr } = await admin
     .from('group_invites')
-    .select('id, role')
+    .select('id, role, pending_permissions')
     .eq('group_id', params.id)
     .eq('email', email.toLowerCase())
     .is('accepted_at', null)
@@ -70,6 +70,37 @@ export async function POST(
 
   if (upsertErr) {
     return NextResponse.json({ error: upsertErr.message }, { status: 500 })
+  }
+
+  // Seed user_permissions from the invite's pre-set permissions (migration
+  // 068). Values were validated at invite time, so apply as-is.
+  const presetPerms = Array.isArray(
+    (invite as { pending_permissions?: Array<{ feature: string; company_id: string | null; access: string }> | null }).pending_permissions,
+  )
+    ? (invite as { pending_permissions: Array<{ feature: string; company_id: string | null; access: string }> }).pending_permissions
+    : []
+  if (presetPerms.length > 0) {
+    await admin
+      .from('user_permissions')
+      .delete()
+      .eq('user_id', session.user.id)
+      .eq('group_id', params.id)
+
+    const permRows = presetPerms
+      .filter(p => p.access && p.access !== 'none')
+      .map(p => ({
+        user_id:    session.user.id,
+        group_id:   params.id,
+        feature:    p.feature,
+        company_id: p.company_id ?? null,
+        access:     p.access,
+        updated_by: session.user.id,
+        updated_at: new Date().toISOString(),
+      }))
+    if (permRows.length > 0) {
+      const { error: permErr } = await admin.from('user_permissions').insert(permRows)
+      if (permErr) console.error('[join] user_permissions insert failed:', permErr.message)
+    }
   }
 
   // Mark invite accepted

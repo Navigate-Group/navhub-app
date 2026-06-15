@@ -41,15 +41,16 @@ export async function POST() {
   // Pending invites for this email across ALL groups.
   const { data: invites } = await admin
     .from('group_invites')
-    .select('id, group_id, role, full_name')
+    .select('id, group_id, role, full_name, pending_permissions')
     .eq('email', email)
     .is('accepted_at', null)
 
   const pending = (invites ?? []) as Array<{
-    id:        string
-    group_id:  string
-    role:      string
-    full_name: string | null
+    id:                  string
+    group_id:            string
+    role:                string
+    full_name:           string | null
+    pending_permissions: Array<{ feature: string; company_id: string | null; access: string }> | null
   }>
 
   if (pending.length === 0) {
@@ -92,6 +93,35 @@ export async function POST() {
     if (!firstClaimedGroupId) firstClaimedGroupId = invite.group_id
     if (invite.full_name && !nameToCopy) nameToCopy = invite.full_name
     setDefault = false   // only the first claim flips the default flag
+
+    // Seed user_permissions from the invite's pre-set permissions (migration
+    // 068). Only meaningful for non-admin roles — admins bypass the matrix.
+    // The values were validated against the staff 'Admin only' rule when the
+    // invite was created, so we apply them as-is here.
+    const presetPerms = Array.isArray(invite.pending_permissions) ? invite.pending_permissions : []
+    if (presetPerms.length > 0) {
+      await admin
+        .from('user_permissions')
+        .delete()
+        .eq('user_id', session.user.id)
+        .eq('group_id', invite.group_id)
+
+      const permRows = presetPerms
+        .filter(p => p.access && p.access !== 'none')
+        .map(p => ({
+          user_id:    session.user.id,
+          group_id:   invite.group_id,
+          feature:    p.feature,
+          company_id: p.company_id ?? null,
+          access:     p.access,
+          updated_by: session.user.id,
+          updated_at: new Date().toISOString(),
+        }))
+      if (permRows.length > 0) {
+        const { error: permErr } = await admin.from('user_permissions').insert(permRows)
+        if (permErr) console.error('[claim-invites] user_permissions insert failed:', permErr.message)
+      }
+    }
 
     // Mark accepted (fire-and-forget — we already have the membership).
     void admin
