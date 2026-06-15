@@ -6484,7 +6484,7 @@ This fix ensures that triggered reviews actually run and post results back to Bu
 - **GET /api/admin/provider-configs**: List all providers with is_configured flag (keys masked)
 - **DELETE /api/admin/provider-configs/{provider}**: Soft-deactivate (sets is_active=false)
 - **POST /api/admin/provider-configs/{provider}/test**: Test connection to provider API
-- All routes enforce super_admin role via RLS check
+- All routes enforce super_admin role by querying `user_groups` for any row with `role='super_admin'` (filtered query + length check, NOT `.single()` — so users who belong to multiple groups in addition to being a superadmin are still authorised)
 
 ### Admin UI
 - **Page**: `/admin/settings/providers` (new)
