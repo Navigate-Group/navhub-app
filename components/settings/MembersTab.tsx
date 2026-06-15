@@ -7,15 +7,18 @@ import { Input }    from '@/components/ui/input'
 import { Badge }    from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { cn }       from '@/lib/utils'
-import type { GroupMember, GroupInvite, AppRole } from '@/lib/types'
+import type { GroupMember, GroupInvite, AppRole, FeatureKey, AccessLevel } from '@/lib/types'
 import { ADMIN_ROLES, canManageRole, canAssignRole } from '@/lib/permissions'
 import PermissionsModal from './PermissionsModal'
+
+type StagedPermission = { feature: FeatureKey; company_id: string | null; access: AccessLevel }
 
 const ROLE_OPTIONS = [
   { value: 'super_admin', label: 'Super Admin' },
   { value: 'group_owner', label: 'Owner'       },
   { value: 'group_admin', label: 'Group Admin' },
   { value: 'manager',     label: 'Manager'     },
+  { value: 'staff',       label: 'Staff'       },
   { value: 'viewer',      label: 'Viewer'      },
 ]
 
@@ -24,6 +27,7 @@ const ROLE_DISPLAY: Record<string, string> = {
   group_owner: 'Owner',
   group_admin: 'Group Admin',
   manager:     'Manager',
+  staff:       'Staff',
   viewer:      'Viewer',
   // Legacy role labels for backwards compat display
   company_viewer:  'Viewer',
@@ -62,6 +66,9 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
   const [companies,      setCompanies]      = useState<{ id: string; name: string }[]>([])
   const [inviteSaving,   setInviteSaving]   = useState(false)
   const [inviteToast,    setInviteToast]    = useState<string | null>(null)
+  // Permissions staged for the invite being composed (before send).
+  const [invitePerms,    setInvitePerms]    = useState<StagedPermission[] | null>(null)
+  const [showInvitePerms, setShowInvitePerms] = useState(false)
 
   const loadMembers = useCallback(async () => {
     if (!groupId) return
@@ -183,6 +190,9 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
           email,
           role: inviteRole,
           full_name: inviteName.trim() || undefined,
+          // Staged permissions (manager/staff/viewer only) — applied when the
+          // invite is accepted. Admin roles bypass the matrix.
+          permissions: invitePerms ?? undefined,
         }),
       })
       const json = await res.json()
@@ -194,6 +204,7 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
       })
       setInviteEmail('')
       setInviteName('')
+      setInvitePerms(null)
       setInviteToast(`Invite recorded for ${email}`)
     } catch (err) {
       setInviteToast(err instanceof Error ? err.message : 'Failed to invite')
@@ -253,7 +264,12 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
             <div className="relative">
               <select
                 value={inviteRole}
-                onChange={e => setInviteRole(e.target.value)}
+                onChange={e => {
+                  setInviteRole(e.target.value)
+                  // Role defaults differ per role — drop any staged perms so
+                  // they're re-derived from the new role's defaults.
+                  setInvitePerms(null)
+                }}
                 className="appearance-none h-9 rounded-md border border-input bg-background pl-2 pr-7 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 {/* Invite form: never offer super_admin or group_owner here. Owners
@@ -270,6 +286,28 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
               {inviteSaving ? 'Saving…' : 'Invite'}
             </Button>
           </div>
+
+          {/* Stage permissions for the invite (non-admin roles only — admins
+              bypass the matrix). Applied when the invitee accepts. */}
+          {inviteRole !== 'group_admin' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1 px-2"
+                onClick={() => setShowInvitePerms(true)}
+              >
+                <Shield className="h-3 w-3" />
+                {invitePerms ? 'Edit permissions' : 'Set permissions'}
+              </Button>
+              {invitePerms && (
+                <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                  <Check className="h-3.5 w-3.5" />
+                  Permissions staged
+                </span>
+              )}
+            </div>
+          )}
           {inviteToast && (
             <p className={cn(
               'text-xs flex items-center gap-1',
@@ -488,7 +526,7 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
         </CardContent>
       </Card>
 
-      {/* Permissions Modal */}
+      {/* Permissions Modal — existing member */}
       {permTarget && groupId && (
         <PermissionsModal
           userId={permTarget.id}
@@ -496,8 +534,29 @@ export default function MembersTab({ groupId, isAdmin, userId, userEmail }: Memb
           email={permTarget.email}
           role={permTarget.role}
           companies={companies}
+          callerRole={callerRole}
           onSave={() => void loadMembers()}
           onClose={() => setPermTarget(null)}
+        />
+      )}
+
+      {/* Permissions Modal — invite (no user yet). Stages permissions onto
+          local state, applied to the invite when it's sent. */}
+      {showInvitePerms && groupId && (
+        <PermissionsModal
+          groupId={groupId}
+          email={inviteEmail.trim() || 'New invite'}
+          role={inviteRole as AppRole}
+          companies={companies}
+          callerRole={callerRole}
+          inviteMode
+          onRoleChange={r => setInviteRole(r)}
+          onSavePermissions={(r, perms) => {
+            setInviteRole(r)
+            setInvitePerms(perms)
+          }}
+          onSave={() => { /* unused in invite mode */ }}
+          onClose={() => setShowInvitePerms(false)}
         />
       )}
     </div>

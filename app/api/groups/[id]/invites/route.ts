@@ -2,7 +2,9 @@ import { NextResponse }      from 'next/server'
 import { cookies }           from 'next/headers'
 import { createClient }      from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { GroupInvite }  from '@/lib/types'
+import type { GroupInvite, PendingPermission, FeatureKey, AccessLevel } from '@/lib/types'
+import { FEATURE_KEYS }      from '@/lib/types'
+import { canSetPermission }  from '@/lib/permissions'
 import { Resend }            from 'resend'
 
 function getResend() {
@@ -16,7 +18,32 @@ function getResend() {
 // Body: { email: string, role: string }
 
 const ADMIN_ROLES     = ['super_admin', 'group_owner', 'group_admin']
-const INVITABLE_ROLES = ['group_admin', 'manager', 'viewer']
+const INVITABLE_ROLES = ['group_admin', 'manager', 'staff', 'viewer']
+
+const VALID_ACCESS: AccessLevel[] = ['none', 'view', 'edit']
+
+/** Parse + validate a permissions array off the invite POST body. Returns the
+ *  cleaned PendingPermission[] (filtering 'none' entries) or null when the
+ *  payload isn't an array. Throws on a malformed entry shape. */
+function parsePermissions(raw: unknown): PendingPermission[] {
+  if (!Array.isArray(raw)) return []
+  const out: PendingPermission[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const p = item as Record<string, unknown>
+    const feature = p.feature as FeatureKey
+    const access  = p.access  as AccessLevel
+    const companyId = p.company_id === null || p.company_id === undefined
+      ? null
+      : String(p.company_id)
+    if (!FEATURE_KEYS.includes(feature)) continue
+    if (!VALID_ACCESS.includes(access)) continue
+    // Don't persist explicit 'none' — absence already means no access.
+    if (access === 'none') continue
+    out.push({ feature, company_id: companyId, access })
+  }
+  return out
+}
 
 export async function GET(
   _request: Request,
@@ -114,6 +141,21 @@ export async function POST(
     )
   }
 
+  // Optional pre-set permissions to stage with the invite (migration 068).
+  // Admin roles bypass the matrix, so permissions only apply to
+  // manager / staff / viewer.
+  const presetPermissions = parsePermissions(body.permissions)
+  // Enforce the staff 'Admin only' rule at invite time too: a group_admin
+  // cannot stage financials/marketing access above 'none' for a staff member.
+  for (const p of presetPermissions) {
+    if (!canSetPermission(membership.role, role, p.feature, p.access)) {
+      return NextResponse.json(
+        { error: `Only a group owner or super admin can grant ${p.feature} access to a staff member.` },
+        { status: 403 },
+      )
+    }
+  }
+
   const admin = createAdminClient()
 
   // Refuse if there's already a pending (unaccepted) invite for this email
@@ -167,7 +209,14 @@ export async function POST(
   const { data: invite, error: inviteErr } = await admin
     .from('group_invites')
     .upsert(
-      { group_id: params.id, email, role, full_name: fullName || null, invited_by: session.user.id },
+      {
+        group_id:            params.id,
+        email,
+        role,
+        full_name:           fullName || null,
+        invited_by:          session.user.id,
+        pending_permissions: presetPermissions.length > 0 ? presetPermissions : null,
+      },
       { onConflict: 'group_id,email', ignoreDuplicates: false }
     )
     .select()
@@ -288,6 +337,28 @@ export async function POST(
       },
       { onConflict: 'user_id,group_id' }
     )
+
+    // Existing user is added immediately — apply any pre-set permissions
+    // straight to user_permissions now (no token-accept step for them).
+    if (presetPermissions.length > 0) {
+      await admin
+        .from('user_permissions')
+        .delete()
+        .eq('user_id', existingUser.id)
+        .eq('group_id', params.id)
+
+      const rows = presetPermissions.map(p => ({
+        user_id:    existingUser.id,
+        group_id:   params.id,
+        feature:    p.feature,
+        company_id: p.company_id,
+        access:     p.access,
+        updated_by: session.user.id,
+        updated_at: new Date().toISOString(),
+      }))
+      const { error: permErr } = await admin.from('user_permissions').insert(rows)
+      if (permErr) console.error('[invite] user_permissions insert error:', permErr.message)
+    }
 
     // Mark invite accepted
     void admin

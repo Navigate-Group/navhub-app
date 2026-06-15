@@ -2,10 +2,10 @@
 // Enums / unions
 // ============================================================
 
-export type UserRole = 'super_admin' | 'group_owner' | 'group_admin' | 'manager' | 'viewer'
+export type UserRole = 'super_admin' | 'group_owner' | 'group_admin' | 'manager' | 'staff' | 'viewer'
 
-// ── Role & Permission types (migration 031, group_owner added in 062) ──
-export type AppRole     = 'super_admin' | 'group_owner' | 'group_admin' | 'manager' | 'viewer'
+// ── Role & Permission types (migration 031, group_owner added in 062, staff in 068) ──
+export type AppRole     = 'super_admin' | 'group_owner' | 'group_admin' | 'manager' | 'staff' | 'viewer'
 export type FeatureKey  = 'financials' | 'reports' | 'documents' | 'marketing' | 'agents' | 'settings'
 export type AccessLevel = 'none' | 'view' | 'edit'
 
@@ -34,7 +34,41 @@ export const ROLE_LABELS: Record<AppRole, string> = {
   group_owner: 'Owner',
   group_admin: 'Group Admin',
   manager:     'Manager',
+  staff:       'Staff',
   viewer:      'Viewer',
+}
+
+// ── Role-default permission matrices (migration 068) ──
+// Applied in the PermissionsModal when a role tab is selected, and used to
+// seed user_permissions when an invite without explicit overrides is claimed.
+//
+//   manager → all features Edit
+//   staff   → Reports / Documents / Agents = Edit;
+//             Financials + Marketing locked to 'none' ('Admin only')
+//   viewer  → all features None
+//
+// 'settings' is intentionally left out (handled by its own grant toggle).
+
+/** Features that are locked to 'none' for staff in the UI ('Admin only').
+ *  Only a group_owner / super_admin may raise these above 'none'. */
+export const STAFF_ADMIN_ONLY_FEATURES: FeatureKey[] = ['financials', 'marketing']
+
+/** Per-feature default access for a role, keyed by feature. Used to pre-fill
+ *  the PermissionsModal grid. Returns 'edit' / 'view' / 'none' for each
+ *  non-settings feature. */
+export function roleDefaultAccess(role: AppRole, feature: FeatureKey): AccessLevel {
+  if (feature === 'settings') return 'none'
+  switch (role) {
+    case 'manager':
+      return 'edit'
+    case 'staff':
+      return STAFF_ADMIN_ONLY_FEATURES.includes(feature) ? 'none' : 'edit'
+    case 'viewer':
+      return 'none'
+    default:
+      // Admin roles bypass the matrix entirely — default to edit for display.
+      return 'edit'
+  }
 }
 
 // Permission lookup: feature → company_id → access level
@@ -235,13 +269,26 @@ export interface DashboardSummary {
 // Group management types  (Phase 2f)
 // ============================================================
 
+/** A single staged permission entry — mirrors the PUT body of the
+ *  permissions API. Stored on group_invites.pending_permissions until the
+ *  invite is accepted, then applied to user_permissions. */
+export interface PendingPermission {
+  feature:    FeatureKey
+  company_id: string | null
+  access:     AccessLevel
+}
+
 export interface GroupInvite {
   id:          string
   group_id:    string
   email:       string
   role:        string
+  full_name?:  string | null
   invited_by:  string
   accepted_at: string | null
+  // Pre-set permissions staged at invite time (migration 068). Applied to
+  // user_permissions when the user accepts.
+  pending_permissions?: PendingPermission[] | null
   created_at:  string
 }
 

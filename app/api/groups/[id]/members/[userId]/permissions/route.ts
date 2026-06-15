@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies }       from 'next/headers'
 import { createClient }  from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getUserPermissions, ADMIN_ROLES } from '@/lib/permissions'
+import { getUserPermissions, ADMIN_ROLES, canSetPermission } from '@/lib/permissions'
 import type { AppRole, FeatureKey, AccessLevel } from '@/lib/types'
 
 // ─── GET — get permissions for a specific user in this group ─────────────────
@@ -87,6 +87,19 @@ export async function PUT(
 
   if (!Array.isArray(body.permissions)) {
     return NextResponse.json({ error: 'permissions array required' }, { status: 400 })
+  }
+
+  // Staff 'Admin only' guard: a group_admin cannot raise financials/marketing
+  // above 'none' for a staff member — only group_owner / super_admin can.
+  const callerRole = callerMembership.role as AppRole
+  const targetRole = targetMembership.role as AppRole
+  for (const p of body.permissions) {
+    if (!canSetPermission(callerRole, targetRole, p.feature, p.access)) {
+      return NextResponse.json(
+        { error: `Only a group owner or super admin can grant ${p.feature} access to a staff member.` },
+        { status: 403 },
+      )
+    }
   }
 
   // Delete existing permissions

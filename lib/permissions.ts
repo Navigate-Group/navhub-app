@@ -5,7 +5,7 @@
 
 import { createAdminClient } from './supabase/admin'
 import type { AppRole, FeatureKey, AccessLevel, PermissionMatrix } from './types'
-import { FEATURE_KEYS } from './types'
+import { FEATURE_KEYS, STAFF_ADMIN_ONLY_FEATURES } from './types'
 
 // Roles that bypass the user_permissions matrix entirely — they always get
 // full edit on every feature. Group owners are admins-plus, so they're in
@@ -21,6 +21,10 @@ export const ROLE_RANK: Record<AppRole, number> = {
   group_owner: 80,
   group_admin: 60,
   manager:     40,
+  // 'staff' (migration 068) sits between manager (40) and viewer (20). Like
+  // manager/viewer it goes through the user_permissions matrix — it is NOT
+  // an ADMIN_ROLE.
+  staff:       30,
   viewer:      20,
 }
 
@@ -49,6 +53,34 @@ export function canAssignRole(current: string, newRole: string): boolean {
   if (newRole === 'group_owner') return current === 'super_admin'
   if (newRole === 'group_admin') return current === 'super_admin' || current === 'group_owner'
   return isAdminRole(current)
+}
+
+// Roles that may raise a staff member's 'Admin only' features (financials,
+// marketing) above 'none'. Group admins cannot — only owners / super admins.
+const STAFF_OVERRIDE_ROLES: AppRole[] = ['super_admin', 'group_owner']
+
+/**
+ * True if the caller is allowed to set `access` on `feature` for a member of
+ * the given `targetRole`. The only restriction: when the target is 'staff',
+ * the 'Admin only' features (financials, marketing) may not be raised above
+ * 'none' unless the caller is a group_owner or super_admin.
+ *
+ * Returns false → the API should reject the write with 403.
+ */
+export function canSetPermission(
+  callerRole: string,
+  targetRole: string,
+  feature:    FeatureKey,
+  access:     AccessLevel,
+): boolean {
+  if (
+    targetRole === 'staff' &&
+    STAFF_ADMIN_ONLY_FEATURES.includes(feature) &&
+    access !== 'none'
+  ) {
+    return STAFF_OVERRIDE_ROLES.includes(callerRole as AppRole)
+  }
+  return true
 }
 
 /** Single-call gate used by feature components — covers the admin-bypass case. */
