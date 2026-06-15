@@ -6537,3 +6537,32 @@ Updated three consumers to check superadmin configs when group config is missing
 - This error is unrelated to the changes in this implementation
 - All new files have valid syntax and TypeScript structure
 
+---
+
+## Sage Investigator — Auto-navigate + Running-scan Polling (`/admin/sage`)
+
+### Problem
+When the operator submitted an issue via "Submit issue for investigation", the
+scan was created but appeared to vanish: `handleRunInvestigation` closed the
+form and called `loadAll()` while leaving the user on whatever tab they were on
+(typically Overview). The running scan only renders in the **Recent scans** list
+on the **Investigations** tab. There was also no polling — a running scan never
+auto-refreshed to "complete" or surfaced new findings without a manual reload.
+
+### Fix (`app/(admin)/admin/sage/page.tsx`)
+1. **Auto-navigate** — after a successful investigation submission,
+   `handleRunInvestigation` now calls `setTab('investigations')` before
+   `loadAll()`, so the operator lands where the running scan and its findings
+   appear. The form still closes and the toast still reads "Investigation started".
+2. **Running-scan poll** — added a `useMemo` (`hasRunningScan`) over `scans`
+   and a `useEffect` that, while any scan is `status === 'running'`, runs
+   `loadAll({ silent: true })` every 6s. The interval is cleared on cleanup and
+   stops automatically once no scan is running (no leak).
+3. **Silent refresh** — `loadAll` now accepts `{ silent?: boolean }`; when
+   silent it skips `setLoading(true)` so polls don't flash the "Loading…" state.
+
+### Notes
+- Pre-existing whole-repo build failure in `app/(admin)/admin/assistant/page.tsx`
+  (module resolution for `@/components/ui/*`, `@/lib/utils`) is unrelated to this
+  change and present on the base branch before these edits.
+
