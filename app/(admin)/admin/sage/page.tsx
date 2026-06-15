@@ -117,6 +117,10 @@ export default function AdminSagePage() {
       setToast('Investigation started')
       setInvestigationOpen(false)
       setInvestigationBrief('')
+      // Land the operator on the Investigations tab, where the running scan
+      // and its eventual findings are surfaced (overview/other tabs don't
+      // render the Recent scans list).
+      setTab('investigations')
       loadAll()
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Scan failed')
@@ -227,8 +231,8 @@ export default function AdminSagePage() {
     }
   }
 
-  const loadAll = useCallback(() => {
-    setLoading(true)
+  const loadAll = useCallback((opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true)
     // Always fetch the broadest status set the current filter would allow,
     // then refine in-memory. Keeps the search + severity + action filters
     // snappy (no round-trip per keystroke) and the response cacheable.
@@ -251,6 +255,16 @@ export default function AdminSagePage() {
       .finally(() => setLoading(false))
   }, [status])
   useEffect(() => { loadAll() }, [status, loadAll])
+
+  // Lightweight poll while any scan is still running — auto-refreshes findings
+  // and scan status so a completed scan (and its new findings) appear without a
+  // manual reload. The interval clears itself as soon as nothing is running.
+  const hasRunningScan = useMemo(() => scans.some(s => s.status === 'running'), [scans])
+  useEffect(() => {
+    if (!hasRunningScan) return
+    const id = setInterval(() => { loadAll({ silent: true }) }, 6000)
+    return () => clearInterval(id)
+  }, [hasRunningScan, loadAll])
 
   async function handleEscalateFinding(finding: SageFinding) {
     setEscalatingFinding(finding)
