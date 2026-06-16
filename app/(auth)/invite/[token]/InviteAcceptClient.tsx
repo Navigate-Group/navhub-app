@@ -11,17 +11,19 @@ const ROLE_LABELS: Record<string, string> = {
 }
 
 interface Props {
-  token:     string
-  email:     string
-  groupName: string
-  role:      string
-  fullName:  string | null
-  isUsed:    boolean
-  isExpired: boolean
+  token:              string
+  email:              string
+  groupName:          string
+  role:               string
+  fullName:           string | null
+  isUsed:             boolean
+  isExpired:          boolean
+  isInvalid:          boolean
+  hasExistingAccount: boolean
 }
 
 export default function InviteAcceptClient({
-  token, email, groupName, role, fullName, isUsed, isExpired,
+  token, email, groupName, role, fullName, isUsed, isExpired, isInvalid, hasExistingAccount,
 }: Props) {
   const [accepting, setAccepting] = useState(false)
   const [error,     setError]     = useState<string | null>(null)
@@ -44,6 +46,21 @@ export default function InviteAcceptClient({
     }
   }
 
+  if (isInvalid) {
+    return (
+      <InviteLayout>
+        <div className="text-center space-y-3">
+          <div className="text-4xl">🔗</div>
+          <h2 className="text-lg font-semibold text-foreground">This link is no longer valid</h2>
+          <p className="text-sm text-muted-foreground">
+            This invitation link can&apos;t be found. It may have been cancelled or replaced with a newer one.
+          </p>
+          <BrokenStateActions email={email} hasExistingAccount={hasExistingAccount} />
+        </div>
+      </InviteLayout>
+    )
+  }
+
   if (isUsed) {
     return (
       <InviteLayout>
@@ -53,9 +70,7 @@ export default function InviteAcceptClient({
           <p className="text-sm text-muted-foreground">
             This invitation has already been used.
           </p>
-          <Link href="/login" className="inline-block mt-4 text-sm text-primary hover:underline">
-            Go to login →
-          </Link>
+          <BrokenStateActions email={email} hasExistingAccount={hasExistingAccount} />
         </div>
       </InviteLayout>
     )
@@ -68,8 +83,9 @@ export default function InviteAcceptClient({
           <div className="text-4xl">⏰</div>
           <h2 className="text-lg font-semibold text-foreground">Invitation expired</h2>
           <p className="text-sm text-muted-foreground">
-            This invitation link has expired. Ask whoever invited you to send a fresh one.
+            This invitation link has expired. Request a fresh one below.
           </p>
+          <BrokenStateActions email={email} hasExistingAccount={hasExistingAccount} />
         </div>
       </InviteLayout>
     )
@@ -118,6 +134,68 @@ export default function InviteAcceptClient({
         </p>
       </div>
     </InviteLayout>
+  )
+}
+
+// Contextual next-steps shown on every broken/terminal state (invalid,
+// already-used, expired). The available actions depend on whether the
+// invitee's email already maps to a Supabase account:
+//   • existing account → "Log in with existing credentials" + "Request a new invite"
+//   • no account       → "Request a new invite" only
+// "Request a new invite" POSTs to /api/invite/request, which returns a
+// neutral success regardless of whether the email was found (no enumeration).
+function BrokenStateActions({
+  email, hasExistingAccount,
+}: {
+  email: string
+  hasExistingAccount: boolean
+}) {
+  const [requesting, setRequesting] = useState(false)
+  const [done,       setDone]       = useState(false)
+
+  async function handleRequest() {
+    setRequesting(true)
+    try {
+      await fetch('/api/invite/request', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email }),
+      })
+    } catch {
+      // Swallow — the endpoint is intentionally neutral and we never reveal
+      // whether the email exists. Always show the same confirmation below.
+    } finally {
+      setRequesting(false)
+      setDone(true)
+    }
+  }
+
+  if (done) {
+    return (
+      <p className="mt-4 text-sm text-foreground">
+        Check your inbox — a new invite is on its way.
+      </p>
+    )
+  }
+
+  return (
+    <div className="mt-4 space-y-2">
+      {hasExistingAccount && (
+        <Link
+          href="/login"
+          className="block w-full py-2.5 px-4 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:opacity-90 text-center"
+        >
+          Log in with existing credentials
+        </Link>
+      )}
+      <button
+        onClick={handleRequest}
+        disabled={requesting}
+        className="block w-full py-2.5 px-4 rounded-lg font-medium text-sm border border-input bg-background text-foreground hover:bg-muted/50 disabled:opacity-50 text-center"
+      >
+        {requesting ? 'Sending…' : 'Request a new invite'}
+      </button>
+    </div>
   )
 }
 
