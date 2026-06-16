@@ -60,7 +60,7 @@ Group        ← top-level tenant (e.g. "Navigate Group")
 app/
   (auth)/
     actions.ts              # Server actions: signIn, signOut, switchGroup
-    login/page.tsx          # Login page — minimal card with email+password
+    login/page.tsx          # Login page — multi-view card (sign-in | set-up | success); in-place React state, no navigations. "New here? Set up your account" opens the invitee Set Up view (locked ?email=, password + confirm, live strength meter); calls supabase.auth.updateUser({ password }) — requires an active invite session, surfaces a clear error if none.
   (dashboard)/
     layout.tsx              # Auth check, loads active group, injects --group-primary
     dashboard/page.tsx      # Dashboard — 4-card layout: Overview, Position, Performance, Status
