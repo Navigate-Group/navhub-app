@@ -1,10 +1,29 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { notFound }          from 'next/navigation'
 import InviteAcceptClient    from './InviteAcceptClient'
 
 // Server component — fetches token metadata via the admin client. The
 // action_link is NEVER passed to the client; only display fields are.
 // The accept handshake happens via POST /api/invite/[token]/accept.
+//
+// On a failed token lookup we DO NOT call notFound(). Tokens can outlive
+// their group_invites row (an admin cancels/resends; the invite row is
+// deleted but the email link still points here) and unknown tokens happen
+// too. Both cases render a styled "link no longer valid" state inside
+// InviteLayout instead of a bare 404.
+
+async function hasExistingAccountForEmail(
+  admin: ReturnType<typeof createAdminClient>,
+  email: string | null,
+): Promise<boolean> {
+  if (!email) return false
+  try {
+    const { data } = await admin.auth.admin.listUsers({ perPage: 1000 })
+    const target = email.toLowerCase()
+    return !!data?.users.some(u => (u.email ?? '').toLowerCase() === target)
+  } catch {
+    return false
+  }
+}
 
 export default async function InvitePage({
   params,
@@ -20,7 +39,21 @@ export default async function InvitePage({
     .single()
 
   if (error || !invite) {
-    notFound()
+    // Unknown token (or its row is otherwise unreadable). We have no email to
+    // check against, so default to the no-account path.
+    return (
+      <InviteAcceptClient
+        token={params.token}
+        email=""
+        groupName=""
+        role=""
+        fullName={null}
+        isUsed={false}
+        isExpired={false}
+        isInvalid={true}
+        hasExistingAccount={false}
+      />
+    )
   }
 
   const inv = invite as {
@@ -32,6 +65,8 @@ export default async function InvitePage({
     expires_at: string
   }
 
+  const hasExistingAccount = await hasExistingAccountForEmail(admin, inv.email)
+
   return (
     <InviteAcceptClient
       token={params.token}
@@ -41,6 +76,8 @@ export default async function InvitePage({
       fullName={inv.full_name}
       isUsed={!!inv.used_at}
       isExpired={new Date(inv.expires_at) < new Date()}
+      isInvalid={false}
+      hasExistingAccount={hasExistingAccount}
     />
   )
 }
