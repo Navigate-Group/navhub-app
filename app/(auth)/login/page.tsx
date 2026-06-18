@@ -189,7 +189,7 @@ function SetUpView({
   onBack: () => void
   onSuccess: () => void
 }) {
-  const [email]                 = useState(invitedEmail)
+  const [email, setEmail]       = useState(invitedEmail)
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')
   const [loading, setLoading]   = useState(false)
@@ -259,8 +259,7 @@ function SetUpView({
               type="email"
               autoComplete="email"
               value={email}
-              readOnly
-              disabled
+              onChange={e => setEmail(e.target.value)}
               placeholder="you@example.com"
             />
           </div>
