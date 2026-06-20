@@ -90,8 +90,13 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/sage/')
 
   if (isPublic) {
-    // Redirect authenticated users away from login
-    if (pathname === '/login' && session) {
+    // Redirect authenticated users away from login — EXCEPT new invitees
+    // landing on the Set Up Account form (/login?setup=true). They already
+    // have a live session from the just-completed invite OTP exchange (see
+    // app/auth/callback/route.ts) but still need to choose a password, so
+    // they must be allowed to reach /login to use that session.
+    const isInviteSetup = request.nextUrl.searchParams.get('setup') === 'true'
+    if (pathname === '/login' && session && !isInviteSetup) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
 

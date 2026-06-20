@@ -39,6 +39,22 @@ export async function GET(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   let firstClaimedGroupId: string | null = null
 
+  // Detect a newly-invited user who has not yet chosen a password. Users
+  // created via admin invite (generateLink({ type: 'invite' }) — see
+  // app/api/groups/[id]/invites/route.ts) carry `invited_at` on the auth
+  // record. Once they complete the Set Up Account form we stamp
+  // user_metadata.password_set = true (see app/(auth)/login/page.tsx), so a
+  // returning invitee who already set a password is NOT treated as new.
+  //
+  // Note: Supabase frequently strips the nested ?next=/set-password query
+  // from the invite redirect URL, so these users otherwise fall through to
+  // the default /landing with no way to set a password. Detecting the state
+  // here (independent of the surviving `next` value) routes them to the
+  // self-service setup form while their just-exchanged session is live.
+  const needsPasswordSetup =
+    !!user?.invited_at &&
+    (user.user_metadata as { password_set?: boolean } | null)?.password_set !== true
+
   if (user?.email) {
     const admin = createAdminClient()
     const email = user.email.toLowerCase()
@@ -104,7 +120,17 @@ export async function GET(request: Request) {
     }
   }
 
-  const response = NextResponse.redirect(new URL(next, url.origin))
+  // Newly-invited users without a password go straight to the Set Up Account
+  // form (/login?setup=true) rather than /landing. The session cookies set by
+  // exchangeCodeForSession above travel with this redirect, so
+  // supabase.auth.getSession() in the setup view succeeds. The email is
+  // pre-filled from the just-authenticated user.
+  const destination =
+    needsPasswordSetup && user?.email
+      ? `/login?setup=true&email=${encodeURIComponent(user.email)}`
+      : next
+
+  const response = NextResponse.redirect(new URL(destination, url.origin))
   if (firstClaimedGroupId) {
     response.cookies.set('active_group_id', firstClaimedGroupId, {
       httpOnly: false,
