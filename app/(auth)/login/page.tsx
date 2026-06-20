@@ -33,8 +33,13 @@ export default function LoginPage() {
 function LoginInner() {
   const searchParams = useSearchParams()
   const invitedEmail = searchParams.get('email') ?? ''
+  // New invitees are redirected here from /auth/callback as
+  // /login?setup=true&email=… once their invite OTP is exchanged. Open the
+  // Set Up Account form directly so they can choose a password using the live
+  // session established by that exchange.
+  const isSetup = searchParams.get('setup') === 'true'
 
-  const [view, setView] = useState<View>('sign-in')
+  const [view, setView] = useState<View>(isSetup ? 'set-up' : 'sign-in')
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -225,7 +230,13 @@ function SetUpView({
         return
       }
 
-      const { error: updateErr } = await supabase.auth.updateUser({ password })
+      // Set the password AND stamp a flag so /auth/callback no longer treats
+      // this invitee as needing setup on future invite/magic-link sign-ins
+      // (the `invited_at` marker on the auth record is permanent).
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password,
+        data: { password_set: true },
+      })
       if (updateErr) throw updateErr
 
       onSuccess()
