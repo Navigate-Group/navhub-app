@@ -1,6 +1,6 @@
-import { NextResponse }      from 'next/server'
-import { createClient }      from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { NextResponse, type NextRequest }            from 'next/server'
+import { createServerClient, type CookieOptions }    from '@supabase/ssr'
+import { createAdminClient }                         from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 
@@ -20,7 +20,7 @@ export const runtime = 'nodejs'
 //
 // On code-exchange failure, redirect to /login?error=auth_failed.
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const url  = new URL(request.url)
   const code = url.searchParams.get('code')
   const next = url.searchParams.get('next') ?? '/landing'
@@ -29,7 +29,33 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL('/login?error=missing_code', url.origin))
   }
 
-  const supabase = createClient()
+  // Build the response object up-front so the Supabase client can write the
+  // session cookies (set by exchangeCodeForSession) directly onto it. In a
+  // Route Handler, mutations made via next/headers' cookieStore are NOT
+  // transferred onto a NextResponse.redirect() — the Set-Cookie headers would
+  // be dropped and the browser would arrive at the setup page without a
+  // session. Binding set/remove to this response (the same pattern used in
+  // middleware.ts) guarantees the auth cookies travel with the redirect.
+  const response = NextResponse.next()
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          response.cookies.set({ name, value, ...options })
+        },
+        remove(name: string, options: CookieOptions) {
+          response.cookies.set({ name, value: '', ...options })
+        },
+      },
+    }
+  )
+
   const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code)
   if (exchangeErr) {
     console.error('[auth/callback] exchange failed:', exchangeErr.message)
@@ -130,13 +156,19 @@ export async function GET(request: Request) {
       ? `/login?setup=true&email=${encodeURIComponent(user.email)}`
       : next
 
-  const response = NextResponse.redirect(new URL(destination, url.origin))
+  // Build the redirect and carry over the session cookies that
+  // exchangeCodeForSession wrote onto `response` above, so the Set-Cookie
+  // headers travel with the redirect the browser receives.
+  const redirect = NextResponse.redirect(new URL(destination, url.origin))
+  for (const cookie of response.cookies.getAll()) {
+    redirect.cookies.set(cookie)
+  }
   if (firstClaimedGroupId) {
-    response.cookies.set('active_group_id', firstClaimedGroupId, {
+    redirect.cookies.set('active_group_id', firstClaimedGroupId, {
       httpOnly: false,
       path:     '/',
       maxAge:   60 * 60 * 24 * 365,
     })
   }
-  return response
+  return redirect
 }
