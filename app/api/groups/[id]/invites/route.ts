@@ -242,7 +242,7 @@ export async function POST(
     // callback so they can set their password before landing in the app
     // (Supabase invite accounts have no password by default). The `next`
     // query param's value is URL-encoded so its own `?invite=true` query
-    // string survives Supabase's redirect parsing.
+    // string survives our own callback parsing.
     const redirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent('/set-password?invite=true')}`
 
     let signupLink = `${appUrl}/login`
@@ -255,7 +255,17 @@ export async function POST(
       if (linkErr) {
         console.error('[invite] generateLink (invite) error:', linkErr.message)
       }
-      const action = (linkData?.properties as { action_link?: string } | undefined)?.action_link
+      // ── Capture the hashed_token, NOT the raw Supabase action_link ─────────
+      // The raw action_link points at supabase.co/auth/v1/verify, which returns
+      // the session in a URL fragment (#access_token=…) that our /auth/callback
+      // route can't read — the session is lost. Instead we build a NavHub-owned
+      // verification URL that carries the hashed_token; /auth/callback calls
+      // supabase.auth.verifyOtp({type:'invite', token_hash}) server-side,
+      // writing the session straight to cookies (no fragment, no PKCE verifier).
+      const hashedToken = (linkData?.properties as { hashed_token?: string } | undefined)?.hashed_token
+      const action = hashedToken
+        ? `${appUrl}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=invite&next=${encodeURIComponent('/set-password?invite=true')}`
+        : undefined
       if (action) {
         // ── Outlook / Microsoft Safe Links work-around ─────────────────────
         // Email security scanners follow every link to check for malware,
