@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams }    from 'next/navigation'
 import { Loader2 }            from 'lucide-react'
 import { createClient }       from '@/lib/supabase/client'
@@ -33,6 +33,15 @@ function SetPasswordInner() {
   const [confirm,  setConfirm]  = useState('')
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState<string | null>(null)
+
+  // [diag] temporary — confirm the invite session survived the callback
+  // redirect. Stripped after the green incognito run confirms the fix is live.
+  useEffect(() => {
+    const supabase = createClient()
+    void supabase.auth.getSession().then(({ data }) => {
+      console.log('[diag] set-password entry hasSession:', !!data.session)
+    })
+  }, [])
 
   async function handleSubmit() {
     setError(null)

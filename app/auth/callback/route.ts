@@ -21,19 +21,24 @@ export const runtime = 'nodejs'
 // On code-exchange failure, redirect to /login?error=auth_failed.
 
 export async function GET(request: NextRequest) {
-  const url  = new URL(request.url)
-  const code = url.searchParams.get('code')
-  const next = url.searchParams.get('next') ?? '/landing'
+  const url        = new URL(request.url)
+  const code       = url.searchParams.get('code')
+  const tokenHash  = url.searchParams.get('token_hash')
+  const otpType    = url.searchParams.get('type')
+  const next       = url.searchParams.get('next') ?? '/landing'
 
-  if (!code) {
+  // Accept either the PKCE `?code=` OAuth/magic-link flow OR our NavHub-owned
+  // `?token_hash=&type=` invite flow (see app/api/groups/[id]/invites/route.ts).
+  // Without one of these there is nothing to verify.
+  if (!code && !tokenHash) {
     return NextResponse.redirect(new URL('/login?error=missing_code', url.origin))
   }
 
   // Build the response object up-front so the Supabase client can write the
-  // session cookies (set by exchangeCodeForSession) directly onto it. In a
-  // Route Handler, mutations made via next/headers' cookieStore are NOT
-  // transferred onto a NextResponse.redirect() — the Set-Cookie headers would
-  // be dropped and the browser would arrive at the setup page without a
+  // session cookies (set by exchangeCodeForSession / verifyOtp) directly onto
+  // it. In a Route Handler, mutations made via next/headers' cookieStore are
+  // NOT transferred onto a NextResponse.redirect() — the Set-Cookie headers
+  // would be dropped and the browser would arrive at the setup page without a
   // session. Binding set/remove to this response (the same pattern used in
   // middleware.ts) guarantees the auth cookies travel with the redirect.
   const response = NextResponse.next()
@@ -56,10 +61,27 @@ export async function GET(request: NextRequest) {
     }
   )
 
-  const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code)
-  if (exchangeErr) {
-    console.error('[auth/callback] exchange failed:', exchangeErr.message)
-    return NextResponse.redirect(new URL('/login?error=auth_failed', url.origin))
+  if (tokenHash) {
+    // ── NavHub invite verification (token_hash) ──────────────────────────────
+    // verifyOtp exchanges the hashed_token for a session and writes the auth
+    // cookies onto `response` via the bound cookie adapters above — no URL
+    // fragment, no PKCE verifier required. The existing `?code=` branch below
+    // is untouched.
+    const { data: otpData, error: verifyErr } = await supabase.auth.verifyOtp({
+      type:       (otpType as 'invite') ?? 'invite',
+      token_hash: tokenHash,
+    })
+    console.log('[diag] auth/callback via:\'verifyOtp\' hasSession:', !!otpData?.session)
+    if (verifyErr) {
+      console.error('[auth/callback] verifyOtp failed:', verifyErr.message)
+      return NextResponse.redirect(new URL('/login?error=auth_failed', url.origin))
+    }
+  } else if (code) {
+    const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code)
+    if (exchangeErr) {
+      console.error('[auth/callback] exchange failed:', exchangeErr.message)
+      return NextResponse.redirect(new URL('/login?error=auth_failed', url.origin))
+    }
   }
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -146,14 +168,17 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Newly-invited users without a password go straight to the Set Up Account
-  // form (/login?setup=true) rather than /landing. The session cookies set by
-  // exchangeCodeForSession above travel with this redirect, so
-  // supabase.auth.getSession() in the setup view succeeds. The email is
-  // pre-filled from the just-authenticated user.
+  // Newly-invited users without a password go straight to the dedicated
+  // Set Up Account form (/set-password?invite=true) rather than /landing.
+  // This must agree with the `redirectTo`/`next` the invite generation sets
+  // (see app/api/groups/[id]/invites/route.ts) — previously this branch sent
+  // invitees to /login?setup=true, a different destination that silently won
+  // over `next`, making the invite's redirectTo irrelevant. The session
+  // cookies set by verifyOtp / exchangeCodeForSession above travel with this
+  // redirect, so supabase.auth.getSession() in the setup view succeeds.
   const destination =
-    needsPasswordSetup && user?.email
-      ? `/login?setup=true&email=${encodeURIComponent(user.email)}`
+    needsPasswordSetup
+      ? '/set-password?invite=true'
       : next
 
   // Build the redirect and carry over the session cookies that
