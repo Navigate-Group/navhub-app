@@ -164,9 +164,20 @@ export function canAccessSettings(role: AppRole): boolean {
   return isAdminRole(role)
 }
 
-/** Which features can the user see at all (has view or edit on at least one company or default) */
+/**
+ * Which features should appear in the nav for a user.
+ *
+ * Nav visibility is gated on the user's *default* (group-wide) access only —
+ * the `null` company_id row, stored under the 'default' key. A company-specific
+ * override (e.g. 'edit' on financials for Company A only) must NOT make the
+ * feature appear in the nav when the default access is 'none'; otherwise a
+ * restricted user sees nav groups (e.g. Financials) that look like the
+ * restriction was ignored. Per-company access is enforced at the page/route
+ * level, not by the nav.
+ */
 export function getVisibleFeatures(matrix: PermissionMatrix): FeatureKey[] {
-  return (Object.keys(matrix) as FeatureKey[]).filter(f =>
-    Object.values(matrix[f]).some(a => a === 'view' || a === 'edit'),
-  )
+  return (Object.keys(matrix) as FeatureKey[]).filter(f => {
+    const def = matrix[f]?.['default'] ?? 'none'
+    return def === 'view' || def === 'edit'
+  })
 }
