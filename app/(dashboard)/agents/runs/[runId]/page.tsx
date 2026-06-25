@@ -92,6 +92,9 @@ const STATUS_CONFIG: Record<RunStatus, { label: string; badgeClass: string }> = 
   error:           { label: 'Error',          badgeClass: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' },
   cancelled:       { label: 'Cancelled',      badgeClass: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
   awaiting_input:  { label: 'Awaiting Reply', badgeClass: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
+  // Recoverable limit terminal — amber, distinct from the red error state.
+  paused:          { label: 'Limit Reached',  badgeClass: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
+  stuck:           { label: 'Stopped (Loop)', badgeClass: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
 }
 
 // ─── Tool result summariser ────────────────────────────────────────────────────
@@ -380,6 +383,12 @@ export default function RunStreamPage() {
   const [toolEvents,    setToolEvents]    = useState<ToolEventEntry[]>([])
   const [tokens,        setTokens]        = useState(0)
   const [errorMsg,      setErrorMsg]      = useState<string | null>(null)
+  // Legible limit / pause state — populated when a run hits a recoverable
+  // ceiling (rate-limit exhaustion, iteration cap) or a stuck loop. Surfaced
+  // as a distinct amber card, separate from the red error block. `pauseStuck`
+  // suppresses the "Run again" affordance for a looping agent.
+  const [pauseReason,   setPauseReason]   = useState<string | null>(null)
+  const [pauseStuck,    setPauseStuck]    = useState(false)
   const [loading,       setLoading]       = useState(true)
   const [durationSecs,  setDurationSecs]  = useState(0)
   // Live elapsed-time clock — ticks every second while the run is active
@@ -447,6 +456,14 @@ export default function RunStreamPage() {
     }>
     if (typeof r0.tokens_used === 'number') setTokens(r0.tokens_used)
     if (r0.error_message)                   setErrorMsg(r0.error_message)
+    // Hydrate the limit/pause card for an already-terminal run on first load.
+    // A `stuck`/`error` row whose pause_reason is set is a loop guard — flag it.
+    if (runRow?.pause_reason) {
+      setPauseReason(runRow.pause_reason)
+      if (runRow.status === 'stuck' || (runRow.status === 'error' && runRow.pause_reason)) {
+        setPauseStuck(runRow.status === 'stuck' || runRow.pause_reason.startsWith('stuck_loop'))
+      }
+    }
 
     const runRes = await fetch(`/api/agents/runs/${params.runId}/stream`).catch(() => null)
     if (!runRes?.ok || !runRes.body) {
@@ -525,6 +542,16 @@ export default function RunStreamPage() {
           setStatus('cancelled')
           // Re-hydrate output from the ref in case any state churn cleared
           // textOutput before the DB save catches up.
+          if (savedOutputRef.current) setTextOutput(savedOutputRef.current)
+          setDurationSecs(computeDuration())
+        } else if (event.type === 'paused') {
+          // Recoverable limit terminal — show the amber card, NOT the red
+          // error block. `stuck` events come through here too (flagged) so a
+          // looping agent is visibly distinct from a re-runnable limit.
+          setPauseReason(event.reason)
+          setPauseStuck(!!event.stuck)
+          setStatus(event.stuck ? 'stuck' : 'paused')
+          if (typeof event.tokens === 'number') setTokens(event.tokens)
           if (savedOutputRef.current) setTextOutput(savedOutputRef.current)
           setDurationSecs(computeDuration())
         } else if (event.type === 'awaiting_input') {
@@ -650,12 +677,13 @@ export default function RunStreamPage() {
               next[idx] = { ...next[idx], output: next[idx].output + event.content }
               return next
             })
-          } else if (event.type === 'done' || event.type === 'error' || event.type === 'cancelled') {
+          } else if (event.type === 'done' || event.type === 'error' || event.type === 'cancelled' || event.type === 'paused') {
             setFollowUpThread(prev => {
               const next = [...prev]
               next[idx] = {
                 ...next[idx],
                 status: event.type === 'done' ? 'success' : 'error',
+                ...(event.type === 'paused' ? { output: next[idx].output + `\n\n⚠️ ${event.reason}` } : {}),
               }
               return next
             })
@@ -720,7 +748,7 @@ export default function RunStreamPage() {
   }
 
   const cfg       = STATUS_CONFIG[status] ?? STATUS_CONFIG.queued
-  const isDone    = status === 'success' || status === 'error' || status === 'cancelled'
+  const isDone    = status === 'success' || status === 'error' || status === 'cancelled' || status === 'paused' || status === 'stuck'
   const isActive  = status === 'running' || status === 'awaiting_input' || status === 'cancelling'
   const isRunning = status === 'queued' || status === 'running'
 
@@ -820,6 +848,7 @@ export default function RunStreamPage() {
             {status === 'success'        && <CheckCircle2   className="h-3 w-3" />}
             {status === 'error'          && <XCircle        className="h-3 w-3" />}
             {status === 'cancelled'      && <Ban            className="h-3 w-3" />}
+            {(status === 'paused' || status === 'stuck') && <AlertCircle className="h-3 w-3" />}
             {cfg.label}
           </Badge>
           {run?.triggered_by === 'schedule' && (
@@ -1123,8 +1152,39 @@ export default function RunStreamPage() {
               </div>
             )}
 
-            {/* Error block */}
-            {errorMsg && (
+            {/* Limit / pause card — amber, distinct from the red error block.
+                Shown when a run hit a recoverable ceiling (rate-limit
+                exhaustion, iteration cap) or a stuck loop. A re-runnable limit
+                offers "Run Again"; a stuck loop deliberately does NOT, since
+                re-running as-is would just loop again. */}
+            {pauseReason && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950 px-3 py-2.5">
+                <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                      {pauseStuck ? 'Stopped — possible loop detected' : 'Limit reached — partial output saved'}
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5 break-words">{pauseReason}</p>
+                  </div>
+                  {!pauseStuck && run?.agent_id && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-amber-300 dark:border-amber-700"
+                      onClick={() => buildRunAgainUrl(run, false)}
+                      title="Re-run this brief — optionally at a larger task size"
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1.5" /> Run Again
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Error block — suppressed when a pause_reason is present, since
+                that case is already surfaced by the amber limit card above. */}
+            {errorMsg && !pauseReason && (
               <div className="flex items-start gap-2 rounded-md border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950 px-3 py-2.5">
                 <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
                 <div>
