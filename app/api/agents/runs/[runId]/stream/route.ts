@@ -18,7 +18,7 @@ export const maxDuration = 300
 //     status transitions (success | error | cancelled | awaiting_input)
 //   • Closes when the run reaches a terminal state or the client aborts
 
-const TERMINAL_STATUSES = new Set(['success', 'error', 'cancelled'])
+const TERMINAL_STATUSES = new Set(['success', 'error', 'cancelled', 'paused', 'stuck'])
 
 export async function GET(
   request: Request,
@@ -62,7 +62,7 @@ export async function GET(
       // ── 1. Initial snapshot — replay saved output + completed tool calls ──
       const { data: initial } = await admin
         .from('agent_runs')
-        .select('status, output, tool_calls, tokens_used, error_message, awaiting_input_question, current_tool')
+        .select('status, output, tool_calls, tokens_used, error_message, pause_reason, awaiting_input_question, current_tool')
         .eq('id', params.runId)
         .single()
 
@@ -74,6 +74,7 @@ export async function GET(
         tool_calls:               Array<{ tool: string; input?: unknown; output?: string }> | null
         tokens_used:              number | null
         error_message:            string | null
+        pause_reason:             string | null
         awaiting_input_question:  string | null
         current_tool:             string | null
       }
@@ -114,11 +115,27 @@ export async function GET(
         }
       }
 
+      // Emit the appropriate final event for a terminal status. A `paused`
+      // status (rate-limit exhaustion / iteration cap) emits a `paused` event
+      // with its legible pause_reason. A `stuck` status, or an `error` that
+      // carries a pause_reason (a stuck-loop guard), is surfaced as a `paused`
+      // event flagged stuck so the UI shows the amber limit card rather than
+      // the generic red error block.
+      const emitTerminal = (r: RunRow) => {
+        if (r.status === 'cancelled')        { send({ type: 'cancelled' }); return }
+        if (r.status === 'paused')           { send({ type: 'paused', reason: r.pause_reason ?? 'Run paused — partial output preserved.', tokens: r.tokens_used ?? 0 }); return }
+        if (r.status === 'stuck')            { send({ type: 'paused', reason: r.pause_reason ?? 'Run stopped — possible loop detected.', stuck: true, tokens: r.tokens_used ?? 0 }); return }
+        if (r.status === 'error') {
+          if (r.pause_reason)                { send({ type: 'paused', reason: r.pause_reason, stuck: true, tokens: r.tokens_used ?? 0 }); return }
+          send({ type: 'error', message: r.error_message ?? 'Unknown error' })
+          return
+        }
+        send({ type: 'done', tokens: r.tokens_used ?? 0 })
+      }
+
       // If already terminal — emit the final event and close.
       if (TERMINAL_STATUSES.has(last.status)) {
-        if (last.status === 'cancelled')   send({ type: 'cancelled' })
-        else if (last.status === 'error')  send({ type: 'error', message: last.error_message ?? 'Unknown error' })
-        else                                send({ type: 'done',  tokens: last.tokens_used ?? 0 })
+        emitTerminal(last)
         close()
         return
       }
@@ -134,7 +151,7 @@ export async function GET(
         if (closed) return
         const { data: row } = await admin
           .from('agent_runs')
-          .select('status, output, tool_calls, tokens_used, error_message, awaiting_input_question, current_tool')
+          .select('status, output, tool_calls, tokens_used, error_message, pause_reason, awaiting_input_question, current_tool')
           .eq('id', params.runId)
           .single()
         if (closed) return
@@ -197,9 +214,7 @@ export async function GET(
 
         // Terminal status — emit final event + close
         if (TERMINAL_STATUSES.has(r.status)) {
-          if (r.status === 'cancelled')   send({ type: 'cancelled' })
-          else if (r.status === 'error')  send({ type: 'error', message: r.error_message ?? 'Unknown error' })
-          else                            send({ type: 'done',  tokens: r.tokens_used ?? 0 })
+          emitTerminal(r)
           close()
           return
         }

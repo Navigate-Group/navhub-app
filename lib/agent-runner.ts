@@ -38,6 +38,7 @@ import type {
   AgentTool,
   ToolCallLog,
   TaskComplexity,
+  RunStatus,
 } from '@/lib/types'
 import { PERSONA_PRESETS as PRESETS, TASK_COMPLEXITY_SETTINGS } from '@/lib/types'
 
@@ -53,6 +54,10 @@ export type RunEvent =
   | { type: 'done';            tokens: number }
   | { type: 'cancelled' }
   | { type: 'awaiting_input';  question: string; interaction_id: string }
+  // Recoverable limit terminal — partial work preserved, run can be continued.
+  // `reason` is the legible pause_reason; `stuck` distinguishes a same-tool
+  // loop (no "continue" offered) from a re-runnable limit.
+  | { type: 'paused';          reason: string; stuck?: boolean; tokens?: number }
 
 export interface RunContext {
   period?:              string
@@ -1139,6 +1144,16 @@ async function callGPT4o(
     body: JSON.stringify(body),
   })
 
+  // 429 rate limit — throw a distinguishable error so executeAgentRun can
+  // sleep for retry-after seconds and retry rather than terminating the run.
+  // Mirrors the RATE_LIMITED:N contract used by callClaude.
+  if (res.status === 429) {
+    const retryHdr   = res.headers.get('retry-after')
+    const retryAfter = retryHdr ? parseInt(retryHdr, 10) : 10
+    console.warn(`[callGPT4o] rate limited (429) — retry after ${retryAfter}s`)
+    throw new Error(`RATE_LIMITED:${Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 10}`)
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: { message?: string } }
     throw new Error(`OpenAI API error ${res.status}: ${err.error?.message ?? 'Unknown'}`)
@@ -1485,6 +1500,14 @@ export async function executeAgentRun(
     clearTimeout(hardTimeoutHandle)
     hardTimeoutHandle = setTimeout(fireIdleTimeout, IDLE_TIMEOUT_MS)
   }
+
+  // Accumulators hoisted to function scope so the outer catch can flush
+  // whatever partial work was produced before a genuine error terminated the
+  // run — preserving partial output unconditionally on every terminal path,
+  // not only on success/cancellation.
+  let fullOutput     = ''
+  let totalTokens    = 0
+  const toolCallLogs: ToolCallLog[] = []
 
   try {
     // Load credentials
@@ -2065,10 +2088,9 @@ Retry once with corrected params. If a second attempt also fails, call ask_user 
       },
     ]
 
-    let fullOutput     = ''
-    let totalTokens    = 0
+    // fullOutput / totalTokens / toolCallLogs are declared at function scope
+    // (above the try) so the outer error catch can flush partial work.
     let continueLoop   = true
-    const toolCallLogs: ToolCallLog[] = []
 
     // Incremental output persistence — every N chunks we flush fullOutput
     // (and current tool_calls / tokens) to the DB so the run-detail page can
@@ -2103,14 +2125,36 @@ Retry once with corrected params. If a second attempt also fails, call ask_user 
     // Wall-clock cap removed — replaced by the activity-aware idle timer
     // declared above (`resetActivityTimer`). Active long runs can now finish.
 
+    // ── Limit-handling playbook state ───────────────────────────────────────
+    // pauseInfo is set when a run hits a recoverable / legible limit terminal
+    // (rate-limit exhaustion, iteration cap, stuck loop). When set, the run is
+    // written with a non-error status + a pause_reason explaining what was hit
+    // and what to do next, instead of either a silent `success` or a bare
+    // `error`. Partial output is always preserved.
+    let pauseInfo: { status: RunStatus; reason: string; stuck?: boolean } | null = null
+
+    // Spin detection — count identical (tool, serialised-input) invocations.
+    // If the same tool is called with byte-identical input N+ times within one
+    // run the agent is looping rather than progressing; we terminate as `stuck`
+    // and do NOT offer "continue".
+    const MAX_IDENTICAL_TOOL_CALLS = 3
+    const toolCallSignatures: Record<string, number> = {}
+    // All limit terminals (rate-limit exhaustion, iteration cap, stuck loop)
+    // set `pauseInfo` and break the loop; a single write path after the loop
+    // persists partial output + pause_reason under the chosen status. This
+    // guarantees every limit path preserves work identically.
+
     // Agentic loop — continue until no more tool calls
     while (continueLoop) {
       iterationCount++
 
       if (iterationCount > MAX_ITERATIONS) {
-        const msg = `\n\n⚠️ **Partial output** — reached the ${MAX_ITERATIONS}-iteration limit before completing all work.\n\nTo continue: start a follow-up run with "Continue from where you left off" as your brief.\n\nIf this task consistently requires more iterations, choose a larger task size (Open the throttle / massive) on the run launcher.\n`
+        const completedTools = toolCallLogs.filter(t => t.output && t.output.length > 0).length
+        const reason = `Reached the ${MAX_ITERATIONS}-iteration limit for the ${taskComplexity} tier before completing all work. ${completedTools} tool call${completedTools === 1 ? '' : 's'} completed and partial output was saved. To continue: re-run at a larger task size (Open the throttle / massive) or start a follow-up run with "Continue from where you left off".`
+        const msg = `\n\n⚠️ **Partial output** — ${reason}\n`
         fullOutput += msg
         onChunk({ type: 'text', content: msg })
+        pauseInfo = { status: 'paused', reason }
         continueLoop = false
         break
       }
@@ -2184,39 +2228,44 @@ Retry once with corrected params. If a second attempt also fails, call ask_user 
           ),
         ])
 
-      if (useOpenAI) {
-        result = await withTimeout(
-          callGPT4o(messages, toolDefs, systemPrompt, openAICreds, (chunk) => {
-            onChunk({ type: 'text', content: chunk })
-            onTextChunk(chunk)
-            resetActivityTimer()
-          }),
-          'callGPT4o',
-        )
-      } else {
-        // Use the resolved model name from config when present; fall back to agent.model
-        const modelToUse = cfgProvider === 'anthropic' && cfgModelName ? cfgModelName : agent.model
-        // Mid-stream cancellation poller — passed into callClaude so it can
-        // bail in the middle of a long model response, not just at iteration
-        // boundaries.
-        const isCancelledFn = async () => {
-          const { data } = await admin
-            .from('agent_runs')
-            .select('cancellation_requested')
-            .eq('id', runId)
-            .single()
-          return !!(data as { cancellation_requested?: boolean } | null)?.cancellation_requested
-        }
+      // Use the resolved model name from config when present; fall back to
+      // agent.model (only used by the Claude branch).
+      const modelToUse = cfgProvider === 'anthropic' && cfgModelName ? cfgModelName : agent.model
+      // Mid-stream cancellation poller — passed into callClaude so it can
+      // bail in the middle of a long model response, not just at iteration
+      // boundaries.
+      const isCancelledFn = async () => {
+        const { data } = await admin
+          .from('agent_runs')
+          .select('cancellation_requested')
+          .eq('id', runId)
+          .single()
+        return !!(data as { cancellation_requested?: boolean } | null)?.cancellation_requested
+      }
 
-        // Retry loop for transient rate limits. callClaude throws
-        // RATE_LIMITED:N on a 429; we sleep N seconds and retry up to
-        // MAX_RATE_LIMIT_RETRIES before giving up.
-        const MAX_RATE_LIMIT_RETRIES = 3
-        let rateLimitRetries = 0
-        let cancelledBreak = false
+      // Unified rate-limit retry loop for BOTH providers. callClaude and
+      // callGPT4o each throw RATE_LIMITED:N on a 429; we sleep min(N, 60)s and
+      // retry up to MAX_RATE_LIMIT_RETRIES. On exhaustion we DO NOT propagate
+      // to the generic error catch — instead we preserve partial output and
+      // land the run in a recoverable `paused` state (playbook item 1).
+      const MAX_RATE_LIMIT_RETRIES = 3
+      const MAX_RATE_LIMIT_WAIT_S  = 60
+      let rateLimitRetries = 0
+      let cancelledBreak   = false
+      let rateLimitedOut   = false
 
-        while (true) {
-          try {
+      while (true) {
+        try {
+          if (useOpenAI) {
+            result = await withTimeout(
+              callGPT4o(messages, toolDefs, systemPrompt, openAICreds, (chunk) => {
+                onChunk({ type: 'text', content: chunk })
+                onTextChunk(chunk)
+                resetActivityTimer()
+              }),
+              'callGPT4o',
+            )
+          } else {
             result = await withTimeout(
               callClaude(modelToUse as AgentModel, messages, toolDefs, systemPrompt, (chunk) => {
                 onChunk({ type: 'text', content: chunk })
@@ -2225,30 +2274,33 @@ Retry once with corrected params. If a second attempt also fails, call ask_user 
               }, claudeCreds, MAX_TOKENS_PER_CALL, isCancelledFn),
               'callClaude',
             )
+          }
+          break
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+
+          // Mid-stream cancellation — preserve partial output and bail
+          if (msg === 'CANCELLED_MID_STREAM') {
+            await admin.from('agent_runs').update({
+              status:       'cancelled',
+              cancelled_at: new Date().toISOString(),
+              completed_at: new Date().toISOString(),
+              output:       fullOutput || null,
+              tool_calls:   toolCallLogs,
+              tokens_used:  totalTokens,
+            }).eq('id', runId)
+            onChunk({ type: 'cancelled' })
+            continueLoop  = false
+            cancelledBreak = true
             break
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err)
+          }
 
-            // Mid-stream cancellation — preserve partial output and bail
-            if (msg === 'CANCELLED_MID_STREAM') {
-              await admin.from('agent_runs').update({
-                status:       'cancelled',
-                cancelled_at: new Date().toISOString(),
-                completed_at: new Date().toISOString(),
-                output:       fullOutput || null,
-                tool_calls:   toolCallLogs,
-                tokens_used:  totalTokens,
-              }).eq('id', runId)
-              onChunk({ type: 'cancelled' })
-              continueLoop  = false
-              cancelledBreak = true
-              break
-            }
-
-            // 429 — sleep and retry
-            if (msg.startsWith('RATE_LIMITED:') && rateLimitRetries < MAX_RATE_LIMIT_RETRIES) {
+          // 429 — sleep (capped at 60s) and retry
+          if (msg.startsWith('RATE_LIMITED:')) {
+            if (rateLimitRetries < MAX_RATE_LIMIT_RETRIES) {
               rateLimitRetries++
-              const waitSeconds = Math.max(1, parseInt(msg.split(':')[1] ?? '10', 10))
+              const requested  = Math.max(1, parseInt(msg.split(':')[1] ?? '10', 10))
+              const waitSeconds = Math.min(requested, MAX_RATE_LIMIT_WAIT_S)
               const note = `\n\n⏳ Rate limit reached — waiting ${waitSeconds}s before continuing (attempt ${rateLimitRetries}/${MAX_RATE_LIMIT_RETRIES})…\n\n`
               onChunk({ type: 'text', content: note })
               onTextChunk(note)
@@ -2256,12 +2308,24 @@ Retry once with corrected params. If a second attempt also fails, call ask_user 
               await new Promise(r => setTimeout(r, waitSeconds * 1000))
               continue
             }
-
-            throw err
+            // Retries exhausted — recoverable terminal, not a hard error.
+            rateLimitedOut = true
+            continueLoop   = false
+            break
           }
-        }
 
-        if (cancelledBreak) break
+          throw err
+        }
+      }
+
+      if (cancelledBreak) break
+      if (rateLimitedOut) {
+        const completedTools = toolCallLogs.filter(t => t.output && t.output.length > 0).length
+        pauseInfo = {
+          status: 'paused',
+          reason: `Rate limited by provider — retry-after exhausted after ${MAX_RATE_LIMIT_RETRIES} attempts. ${completedTools} tool call${completedTools === 1 ? '' : 's'} completed and partial output was preserved. Re-run to continue from where it left off; if this recurs, reduce concurrent runs or upgrade the provider plan.`,
+        }
+        break
       }
 
       totalTokens += result.tokens
@@ -2296,6 +2360,28 @@ Retry once with corrected params. If a second attempt also fails, call ask_user 
       for (const tc of result.tool_calls) {
         const toolName = tc.name as AgentTool
         const startTs  = Date.now()
+
+        // ── Spin detection ──────────────────────────────────────────────────
+        // A progressing agent varies its tool inputs; a stuck one repeats the
+        // exact same (tool, input) call. If the same tool is invoked with
+        // byte-identical serialised input MAX_IDENTICAL_TOOL_CALLS+ times in a
+        // single run, terminate as `stuck` rather than burning the remaining
+        // iteration budget. ask_user is excluded — it is a legitimate pause.
+        if (toolName !== 'ask_user') {
+          let signature: string
+          try { signature = `${toolName}:${JSON.stringify(tc.input ?? {})}` }
+          catch { signature = `${toolName}:[unserialisable]` }
+          toolCallSignatures[signature] = (toolCallSignatures[signature] ?? 0) + 1
+          if (toolCallSignatures[signature] >= MAX_IDENTICAL_TOOL_CALLS) {
+            const reason = `stuck_loop: ${toolName} called ${toolCallSignatures[signature]} times with identical input. The agent was looping rather than progressing and was stopped. Review the brief or the agent's tools — re-running as-is will likely loop again.`
+            const note = `\n\n🛑 **Stopped — possible loop detected.** ${reason}\n`
+            fullOutput += note
+            onChunk({ type: 'text', content: note })
+            pauseInfo = { status: 'error', reason, stuck: true }
+            continueLoop = false
+            break
+          }
+        }
 
         // Diagnostic log — helps debug tool input issues
         console.log('Tool call raw:', JSON.stringify({
@@ -2422,6 +2508,38 @@ Retry once with corrected params. If a second attempt also fails, call ask_user 
       } catch { /* not JSON */ }
     }
 
+    // Recoverable / limit terminal — a cap was hit (rate-limit exhaustion,
+    // iteration cap, or stuck loop). Persist partial output + the legible
+    // pause_reason under a non-success status, notify, and stop here. This
+    // takes priority over the `success` save below so a limited run never
+    // masquerades as a clean completion.
+    if (pauseInfo) {
+      await admin
+        .from('agent_runs')
+        .update({
+          status:          pauseInfo.status,
+          pause_reason:    pauseInfo.reason,
+          output:          fullOutput || null,
+          tool_calls:      toolCallLogs,
+          tokens_used:     totalTokens,
+          draft_report_id: draftReportId,
+          completed_at:    new Date().toISOString(),
+        })
+        .eq('id', runId)
+
+      const { data: pausedRun } = await admin
+        .from('agent_runs')
+        .select('id, status, run_name, output_document_id, draft_report_id, notify_email, notify_slack_channel')
+        .eq('id', runId)
+        .single()
+      if (pausedRun) {
+        await sendRunNotifications(pausedRun as RunForNotify, agent as unknown as AgentForNotify, agent.group_id)
+      }
+
+      onChunk({ type: 'paused', reason: pauseInfo.reason, stuck: pauseInfo.stuck, tokens: totalTokens })
+      return
+    }
+
     // Save completed run
     await admin
       .from('agent_runs')
@@ -2451,11 +2569,17 @@ Retry once with corrected params. If a second attempt also fails, call ask_user 
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error during agent run'
 
+    // Flush whatever partial work was produced before the error so the run
+    // detail page shows partial progress instead of a blank — partial output
+    // is preserved on the genuine-error path too, not only on success.
     await admin
       .from('agent_runs')
       .update({
         status:        'error',
         error_message: message,
+        output:        fullOutput || null,
+        tool_calls:    toolCallLogs,
+        tokens_used:   totalTokens,
         completed_at:  new Date().toISOString(),
       })
       .eq('id', runId)

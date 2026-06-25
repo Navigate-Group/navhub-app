@@ -23,6 +23,9 @@ const STATUS_CONFIG: Record<RunStatus, { label: string; icon: React.ComponentTyp
   error:           { label: 'Error',          icon: XCircle,        class: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' },
   cancelled:       { label: 'Cancelled',      icon: AlertCircle,    class: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
   awaiting_input:  { label: 'Reply needed',   icon: MessageSquare,  class: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
+  // Recoverable limit terminals (migration 070) — amber, distinct from error.
+  paused:          { label: 'Limit reached',  icon: AlertCircle,    class: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
+  stuck:           { label: 'Stopped (loop)', icon: AlertCircle,    class: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' },
 }
 
 function RunStatusBadge({ status }: { status: RunStatus }) {

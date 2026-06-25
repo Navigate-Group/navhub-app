@@ -391,6 +391,11 @@ export type PersonaPreset =
 
 export type RunStatus =
   | 'queued' | 'running' | 'cancelling' | 'success' | 'error' | 'cancelled' | 'awaiting_input'
+  // Recoverable / limit states (migration 070). `paused` = a recoverable
+  // event (e.g. rate-limit retries exhausted) where partial work is preserved
+  // and the run can be continued. `stuck` = a same-tool-same-input loop was
+  // detected and the run was terminated to avoid burning the budget.
+  | 'paused' | 'stuck'
 
 export interface Agent {
   id:                    string
@@ -534,6 +539,11 @@ export interface AgentRun {
   model_used:       string | null
   tokens_used:      number | null
   error_message:    string | null
+  // Legible explanation for a limit / recoverable terminal (migration 070).
+  // Populated when a run hits a rate-limit ceiling, iteration/token cap, or a
+  // stuck-loop guard. Surfaced as a distinct amber "limit hit" card on the run
+  // detail page, separate from the generic error block.
+  pause_reason:     string | null
   draft_report_id:         string | null
   cancellation_requested:  boolean
   cancelled_at:            string | null
