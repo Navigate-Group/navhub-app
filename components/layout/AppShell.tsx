@@ -291,8 +291,8 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
             {/* Agents — top level */}
             {show('agents') && <NavLink href="/agents" label="Agents" Icon={Bot} mobile={mobile} />}
 
-            {/* Integrations — between Agents and Settings */}
-            {(show('financials') || show('marketing') || show('documents') || show('reports')) && (
+            {/* Integrations — admin-only, between Agents and Settings */}
+            {isAdmin && (
               <NavLink href="/integrations" label="Integrations" Icon={Plug} mobile={mobile} />
             )}
 
