@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateSlug } from '@/lib/utils'
+import { Resend } from 'resend'
+
+function getResend() {
+  return new Resend(process.env.RESEND_API_KEY)
+}
 
 async function verifySuperAdmin(userId: string): Promise<boolean> {
   const admin = createAdminClient()
@@ -87,51 +92,191 @@ export async function POST(req: Request) {
   const tier  = ['starter', 'pro', 'enterprise'].includes(subscription_tier ?? '') ? subscription_tier! : 'starter'
   const limit = token_limit_mtd ?? TIER_LIMITS[tier]
 
-  // Find or create owner user
-  const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
-  let ownerId: string
+  const email      = owner_email.toLowerCase().trim()
+  const appUrl     = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.navhub.co'
+  const fromDomain = process.env.RESEND_FROM_DOMAIN  ?? 'navhub.co'
+  const ownerRole  = 'group_owner'
 
-  const existing = users.find((u: { email?: string }) => u.email?.toLowerCase() === owner_email.toLowerCase().trim())
-  if (existing) {
-    ownerId = existing.id
-  } else {
-    // Create user with a temporary random password
-    const tempPassword = Math.random().toString(36).slice(-16) + Math.random().toString(36).slice(-16)
-    const { data: newUser, error: createErr } = await admin.auth.admin.createUser({
-      email:         owner_email.trim(),
-      password:      tempPassword,
-      email_confirm: true,
-    })
-    if (createErr) return NextResponse.json({ error: `Failed to create user: ${createErr.message}` }, { status: 400 })
-    ownerId = newUser.user.id
-  }
+  // Does this email already belong to a Supabase user? New owners are NEVER
+  // created with a plaintext password — they're invited via email and set
+  // their own password (mirrors app/api/groups/[id]/invites/route.ts).
+  const { data: { users } } = await admin.auth.admin.listUsers({ perPage: 1000 })
+  const existing = users.find((u: { email?: string }) => (u.email ?? '').toLowerCase() === email)
 
   // Create slug
   const slug = generateSlug(name.trim())
 
-  // Create the group
+  // Create the group. owner_id / owner_user_id are stamped immediately for an
+  // existing owner; for a new (invited) owner they're filled when the invite
+  // is accepted and the user_groups membership is claimed by /auth/callback.
   const { data: group, error: groupErr } = await admin.from('groups').insert({
     name:              name.trim(),
     slug,
     subscription_tier: tier,
     token_limit_mtd:   limit,
-    owner_id:          ownerId,
+    owner_id:          existing?.id ?? null,
+    owner_user_id:     existing?.id ?? null,
     palette_id:        'ocean',
     is_active:         true,
   }).select('id, name').single()
 
   if (groupErr) return NextResponse.json({ error: groupErr.message }, { status: 500 })
 
-  // Add owner as group_owner of the new group (migration 062).
-  // Also stamp owner_user_id on the groups row for ownership lookups.
-  void admin.from('groups').update({ owner_user_id: ownerId }).eq('id', group.id)
-  const { error: memberErr } = await admin.from('user_groups').insert({
-    user_id:    ownerId,
-    group_id:   group.id,
-    role:       'group_owner',
-    is_default: true,
-  })
-  if (memberErr) return NextResponse.json({ error: memberErr.message }, { status: 500 })
+  const groupName = group.name ?? name.trim()
+
+  // Record the invite so /auth/callback claims it (new owner) — for an existing
+  // owner we mark it accepted right away since they're added immediately.
+  const { data: invite, error: inviteErr } = await admin
+    .from('group_invites')
+    .upsert(
+      {
+        group_id:    group.id,
+        email,
+        role:        ownerRole,
+        invited_by:  session.user.id,
+        accepted_at: existing ? new Date().toISOString() : null,
+      },
+      { onConflict: 'group_id,email', ignoreDuplicates: false },
+    )
+    .select()
+    .single()
+  if (inviteErr) return NextResponse.json({ error: inviteErr.message }, { status: 500 })
+
+  if (existing) {
+    // ── EXISTING user — add as group owner immediately + magic-link notice. ──
+    const { error: memberErr } = await admin.from('user_groups').upsert(
+      {
+        user_id:    existing.id,
+        group_id:   group.id,
+        role:       ownerRole,
+        is_default: true,
+      },
+      { onConflict: 'user_id,group_id' },
+    )
+    if (memberErr) return NextResponse.json({ error: memberErr.message }, { status: 500 })
+
+    let loginLink = `${appUrl}/landing`
+    try {
+      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+        type:    'magiclink',
+        email,
+        options: { redirectTo: `${appUrl}/auth/callback?next=/landing` },
+      })
+      if (linkErr) console.error('[admin/groups] generateLink (magiclink) error:', linkErr.message)
+      const action = (linkData?.properties as { action_link?: string } | undefined)?.action_link
+      if (action) {
+        const { data: tokenRow, error: tokenErr } = await admin
+          .from('invite_tokens')
+          .insert({
+            invite_id:   invite.id,
+            action_link: action,
+            email,
+            group_id:    group.id,
+            group_name:  groupName,
+            role:        ownerRole,
+          })
+          .select('token')
+          .single()
+        if (tokenErr) {
+          console.error('[admin/groups] invite_tokens insert error:', tokenErr.message)
+          loginLink = action
+        } else if (tokenRow) {
+          loginLink = `${appUrl}/invite/${(tokenRow as { token: string }).token}`
+        }
+      }
+    } catch (err) {
+      console.error('[admin/groups] generateLink (magiclink) threw:', err instanceof Error ? err.message : String(err))
+    }
+
+    await getResend().emails.send({
+      from:    `NavHub <invites@${fromDomain}>`,
+      to:      email,
+      subject: `You're now the owner of ${groupName} on NavHub`,
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px">
+          <h2 style="margin:0 0 8px">You now own <strong>${groupName}</strong></h2>
+          <p style="margin:0 0 16px;color:#555">
+            You've been made the <strong>group owner</strong> of <strong>${groupName}</strong> on NavHub.
+          </p>
+          <p style="margin:24px 0">
+            <a href="${loginLink}"
+               style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">
+              Open NavHub →
+            </a>
+          </p>
+          <p style="margin:0 0 8px;font-size:12px;color:#777">This link expires in 24 hours.</p>
+          <p style="margin-top:24px;font-size:12px;color:#aaa">
+            If you weren't expecting this, you can safely ignore this email.
+          </p>
+        </div>
+      `,
+    })
+  } else {
+    // ── NEW owner — invite link (no password). Mirror the invites route. ─────
+    const redirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent('/set-password?invite=true')}`
+
+    let signupLink = `${appUrl}/login`
+    try {
+      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+        type:    'invite',
+        email,
+        options: { redirectTo, data: { group_id: group.id, role: ownerRole, invited_by: session.user.id } },
+      })
+      if (linkErr) console.error('[admin/groups] generateLink (invite) error:', linkErr.message)
+
+      const hashedToken = (linkData?.properties as { hashed_token?: string } | undefined)?.hashed_token
+      const action = hashedToken
+        ? `${appUrl}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=invite&next=${encodeURIComponent('/set-password?invite=true')}`
+        : undefined
+      if (action) {
+        const { data: tokenRow, error: tokenErr } = await admin
+          .from('invite_tokens')
+          .insert({
+            invite_id:   invite.id,
+            action_link: action,
+            email,
+            group_id:    group.id,
+            group_name:  groupName,
+            role:        ownerRole,
+          })
+          .select('token')
+          .single()
+        if (tokenErr) {
+          console.error('[admin/groups] invite_tokens insert error:', tokenErr.message)
+          signupLink = action
+        } else if (tokenRow) {
+          signupLink = `${appUrl}/invite/${(tokenRow as { token: string }).token}`
+        }
+      }
+    } catch (err) {
+      console.error('[admin/groups] generateLink (invite) threw:', err instanceof Error ? err.message : String(err))
+    }
+
+    await getResend().emails.send({
+      from:    `NavHub <invites@${fromDomain}>`,
+      to:      email,
+      subject: `You've been invited to own ${groupName} on NavHub`,
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px">
+          <h2 style="margin:0 0 8px">You've been invited to own <strong>${groupName}</strong></h2>
+          <p style="margin:0 0 16px;color:#555">
+            You've been invited to set up <strong>${groupName}</strong> on NavHub as the
+            <strong>group owner</strong>.
+          </p>
+          <p style="margin:24px 0">
+            <a href="${signupLink}"
+               style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">
+              Accept invitation &amp; set up your account →
+            </a>
+          </p>
+          <p style="margin:0 0 8px;font-size:12px;color:#777">This link expires in 24 hours.</p>
+          <p style="margin-top:24px;font-size:12px;color:#aaa">
+            If you weren't expecting this, you can safely ignore this email.
+          </p>
+        </div>
+      `,
+    })
+  }
 
   // Audit log
   void admin.from('admin_audit_log').insert({
@@ -139,7 +284,7 @@ export async function POST(req: Request) {
     action:      'create_group',
     entity_type: 'group',
     entity_id:   group.id,
-    metadata:    { name: name.trim(), owner_email: owner_email.trim(), tier },
+    metadata:    { name: name.trim(), owner_email: email, tier, owner_existing: !!existing },
   })
 
   return NextResponse.json({ data: group }, { status: 201 })

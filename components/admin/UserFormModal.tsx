@@ -41,7 +41,6 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
 
   // New user fields
   const [email,    setEmail]    = useState(user?.email ?? '')
-  const [password, setPassword] = useState('')
   const [groupId,  setGroupId]  = useState(user?.group_id ?? '')
   const [role,     setRole]     = useState(user?.role ?? 'viewer')
 
@@ -49,6 +48,8 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
   const [groups,   setGroups]   = useState<Group[]>([])
   const [saving,   setSaving]   = useState(false)
   const [error,    setError]    = useState<string | null>(null)
+  // Set once an invite email has been sent for a new user.
+  const [invitedEmail, setInvitedEmail] = useState<string | null>(null)
 
   // Multi-group management (edit mode)
   const [memberships, setMemberships] = useState<GroupMembership[]>(
@@ -103,7 +104,6 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
 
   async function handleSave() {
     if (!isEdit && !email.trim()) { setError('Email is required.'); return }
-    if (!isEdit && !password.trim()) { setError('Password is required for new users.'); return }
     if (!isEdit && !groupId) { setError('Please select a group.'); return }
 
     setSaving(true)
@@ -113,11 +113,13 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password, group_id: groupId, role }),
+        body: JSON.stringify({ email: email.trim(), group_id: groupId, role }),
       })
       const json = await res.json() as { error?: string }
       if (!res.ok) { setError(json.error ?? 'Failed to save.'); return }
-      onSaved()
+      // Show a confirmation that the invite email was sent rather than
+      // silently closing — the new user sets their own password via the link.
+      setInvitedEmail(email.trim())
     } finally {
       setSaving(false)
     }
@@ -233,8 +235,31 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
           </button>
         </div>
 
+        {/* New user — invite sent confirmation */}
+        {!isEdit && invitedEmail && (
+          <div className="space-y-5">
+            <div className="rounded-lg border border-emerald-800 bg-emerald-900/20 px-4 py-4">
+              <p className="text-sm font-medium text-emerald-300">Invite sent</p>
+              <p className="mt-1 text-sm text-emerald-200/80">
+                An invitation email has been sent to{' '}
+                <span className="font-mono text-emerald-100">{invitedEmail}</span>. They&apos;ll
+                click the link in the email to accept and set their own password — no password
+                is created or shared here.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => onSaved()}
+                className="px-4 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* New user form */}
-        {!isEdit && (
+        {!isEdit && !invitedEmail && (
           <div className="space-y-4">
             <div>
               <label className="block text-xs text-zinc-400 mb-1">Email *</label>
@@ -243,16 +268,6 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="user@company.com"
-                className="w-full h-9 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1">Temporary Password *</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
                 className="w-full h-9 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
               />
             </div>
@@ -281,6 +296,11 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
               </select>
             </div>
 
+            <p className="text-xs text-zinc-500 bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2">
+              An invitation email will be sent to this address. The user sets their own password
+              via the link — no password is created or shared here.
+            </p>
+
             {error && (
               <p className="text-sm text-red-400 bg-red-900/20 border border-red-800 rounded-lg px-3 py-2">
                 {error}
@@ -299,7 +319,7 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
                 disabled={saving}
                 className="px-4 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-colors disabled:opacity-60"
               >
-                {saving ? 'Saving…' : 'Create User'}
+                {saving ? 'Sending…' : 'Send Invite'}
               </button>
             </div>
           </div>

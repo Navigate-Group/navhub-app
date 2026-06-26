@@ -3078,10 +3078,10 @@ Green < 70% · Amber 70–90% · Red ≥ 90%
 ### New/updated API routes
 ```
 GET  /api/admin/groups              → enriched with subscription_tier, token_usage_mtd, token_limit_mtd, is_active
-POST /api/admin/groups              → create group + owner user (find or create) + audit log
+POST /api/admin/groups              → create group + invite owner via invite-link flow (NO plaintext password): new owner → group_invites + generateLink('invite') + invite_tokens + Resend "Accept invitation" email; existing user → added as group_owner + magic-link notice. Audit log.
 PATCH  /api/admin/groups/[id]       → update name/slug/tier/limit/is_active/owner_id + audit log
 DELETE /api/admin/groups/[id]       → soft delete (is_active=false); 409 if active companies; audit log
-POST /api/admin/users               → create auth user + add to group + audit log
+POST /api/admin/users               → invite a user via invite-link flow (NO password param — rejects one if supplied): new user → group_invites + generateLink('invite') + invite_tokens + Resend "Accept invitation" email (sets own password via /set-password); existing user → added to group + magic-link notice. Audit log.
 PATCH  /api/admin/users/[id]        → update user_groups membership (role, group_id); upsert if no existing row
 DELETE /api/admin/users/[id]        → ban via auth.admin.updateUserById(id, { ban_duration: '876600h' }) + audit log
 GET  /api/admin/agents              → all agents across groups with run stats (total_runs, last_run_at, token_usage)
@@ -3099,7 +3099,7 @@ GET  /api/admin/audit               → paginated (?page=&limit=50&action=&entit
 ### Updated admin pages
 - **`/admin/groups`** — tier badge, token bar, "+ New Group" button, Edit/Deactivate per row
 - **`/admin/groups/[id]`** — tier badge, token bar, "Edit Group" → GroupFormModal, 8-field metadata grid
-- **`/admin/users`** — "+ New User" button, "Edit" per row → UserFormModal (pre-fills first group membership)
+- **`/admin/users`** — "+ New User" button → UserFormModal new-user form collects email + group + role only (NO password field); "Send Invite" emails an invite link and shows an "Invite sent to <email>" confirmation. "Edit" per row → UserFormModal multi-group management (pre-fills memberships)
 - **`/admin` dashboard** — Platform Token Usage MTD card (total bar + per-group mini breakdown)
 
 ### Admin nav (updated)
