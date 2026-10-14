@@ -45,6 +45,53 @@ export async function PATCH(
 
   if (!role && !group_id) return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
 
+  // ── Superadmin promotion ────────────────────────────────────────────────────
+  // super_admin is a system-wide role: a user is a superadmin if they hold a
+  // user_groups row with role = 'super_admin' on ANY group. To promote, we set
+  // one of the target user's existing memberships to super_admin. A super_admin
+  // row still needs a concrete group_id (NOT NULL PK), so the caller supplies the
+  // membership to elevate (defaults to the user's first/default membership).
+  if (role === 'super_admin') {
+    // Already a superadmin? Nothing to do.
+    const { data: existingSuper } = await admin
+      .from('user_groups')
+      .select('group_id')
+      .eq('user_id', userId)
+      .eq('role', 'super_admin')
+      .limit(1)
+    if ((existingSuper?.length ?? 0) > 0) {
+      return NextResponse.json({ success: true, already_super_admin: true })
+    }
+
+    // Pick the membership row to elevate: the supplied group_id, else the
+    // user's default membership, else any membership.
+    let targetGroupId = group_id
+    if (!targetGroupId) {
+      const { data: memberships } = await admin
+        .from('user_groups')
+        .select('group_id, is_default')
+        .eq('user_id', userId)
+        .order('is_default', { ascending: false })
+      targetGroupId = memberships?.[0]?.group_id
+    }
+    if (!targetGroupId) {
+      return NextResponse.json(
+        { error: 'User has no group membership to elevate. Add them to a group first.' },
+        { status: 400 },
+      )
+    }
+
+    const { error: promoteErr } = await admin
+      .from('user_groups')
+      .update({ role: 'super_admin' })
+      .eq('user_id', userId)
+      .eq('group_id', targetGroupId)
+    if (promoteErr) return NextResponse.json({ error: promoteErr.message }, { status: 500 })
+
+    await logAudit(admin, session.user.id, 'promote_super_admin', userId, { group_id: targetGroupId })
+    return NextResponse.json({ success: true, promoted: true })
+  }
+
   const updates: Record<string, unknown> = {}
   if (role)     updates.role     = role
   if (group_id) updates.group_id = group_id

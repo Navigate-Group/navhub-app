@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Plus, Star, Trash2 } from 'lucide-react'
+import { X, Plus, Star, Trash2, ShieldCheck } from 'lucide-react'
 
 interface Group {
   id:   string
@@ -27,6 +27,13 @@ interface UserFormModalProps {
   }
   onClose: () => void
   onSaved: () => void
+  /**
+   * Whether the CURRENT viewer is a superadmin. Only superadmins may promote
+   * other users to superadmin. Defaults to true because this modal is only
+   * reachable from the superadmin-gated /admin area, but kept explicit so the
+   * promotion control can never render for a non-superadmin.
+   */
+  isSuperAdmin?: boolean
 }
 
 const ROLES = [
@@ -36,7 +43,7 @@ const ROLES = [
   { value: 'viewer',      label: 'Viewer',        description: 'Access controlled by permissions matrix' },
 ]
 
-export default function UserFormModal({ user, onClose, onSaved }: UserFormModalProps) {
+export default function UserFormModal({ user, onClose, onSaved, isSuperAdmin = true }: UserFormModalProps) {
   const isEdit = !!user
 
   // New user fields
@@ -60,6 +67,12 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
   const [addRole,      setAddRole]      = useState('viewer')
   const [addingGroup,  setAddingGroup]  = useState(false)
   const [updatingMembership, setUpdatingMembership] = useState<string | null>(null)
+
+  // Superadmin promotion (edit mode) — confirm dialog + success message state
+  const [showPromoteConfirm, setShowPromoteConfirm] = useState(false)
+  const [promoting,          setPromoting]          = useState(false)
+  const [promoteError,       setPromoteError]       = useState<string | null>(null)
+  const [promoted,           setPromoted]           = useState(false)
 
   useEffect(() => {
     fetch('/api/admin/groups')
@@ -217,6 +230,39 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
       setAddingGroup(false)
     }
   }
+
+  async function handlePromoteToSuperAdmin() {
+    if (!user) return
+    setPromoting(true)
+    setPromoteError(null)
+    try {
+      // Elevate the user's default membership (fall back to the first one).
+      const targetGroupId =
+        memberships.find(m => m.is_default)?.group_id ?? memberships[0]?.group_id
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'super_admin', group_id: targetGroupId }),
+      })
+      const json = await res.json() as { error?: string }
+      if (!res.ok) { setPromoteError(json.error ?? 'Failed to promote user.'); return }
+      setShowPromoteConfirm(false)
+      setPromoted(true)
+      // Reflect the new role locally so the toggle hides immediately.
+      setMemberships(prev => prev.map(m =>
+        m.group_id === targetGroupId ? { ...m, role: 'super_admin' } : m,
+      ))
+      void loadMemberships()
+    } catch {
+      setPromoteError('Failed to promote user.')
+    } finally {
+      setPromoting(false)
+    }
+  }
+
+  // The target user is already a superadmin if ANY membership carries the role.
+  const isAlreadySuperAdmin = memberships.some(m => m.role === 'super_admin')
+  const userDisplayName = user?.email ?? 'this user'
 
   // Groups not yet assigned to this user
   const availableGroups = groups.filter(g => !memberships.some(m => m.group_id === g.id))
@@ -442,6 +488,110 @@ export default function UserFormModal({ user, onClose, onSaved }: UserFormModalP
                 </div>
               )}
             </div>
+
+            {/* ── Superadmin promotion ─────────────────────────────────────────
+                Visible only to superadmins, and only when the edited user is not
+                already a superadmin. Shows a confirmation dialog, then a success
+                message with copy-paste onboarding instructions. */}
+            {isSuperAdmin && !isAlreadySuperAdmin && (
+              <div className="border-t border-zinc-800 pt-4">
+                {!promoted && !showPromoteConfirm && (
+                  <div className="rounded-lg border border-amber-800/50 bg-amber-900/10 px-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <ShieldCheck className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-amber-200">Superadmin access</p>
+                        <p className="mt-0.5 text-xs text-amber-200/70">
+                          Grant this user system-wide superadmin access, including the
+                          admin console at <span className="font-mono">/admin/</span>.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => { setPromoteError(null); setShowPromoteConfirm(true) }}
+                        className="shrink-0 px-3 py-1.5 text-xs font-medium bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-colors"
+                      >
+                        Make Superadmin
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Confirmation dialog */}
+                {!promoted && showPromoteConfirm && (
+                  <div className="rounded-lg border border-amber-700 bg-amber-900/20 px-4 py-4">
+                    <p className="text-sm font-medium text-amber-100">
+                      Make {userDisplayName} a superadmin?
+                    </p>
+                    <p className="mt-1 text-xs text-amber-200/80">
+                      Superadmins have unrestricted, system-wide access across every group
+                      and the admin console. This action is logged.
+                    </p>
+                    {promoteError && (
+                      <p className="mt-2 text-xs text-red-400 bg-red-900/20 border border-red-800 rounded px-2 py-1.5">
+                        {promoteError}
+                      </p>
+                    )}
+                    <div className="flex justify-end gap-2 mt-3">
+                      <button
+                        onClick={() => setShowPromoteConfirm(false)}
+                        disabled={promoting}
+                        className="px-3 py-1.5 text-xs text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => void handlePromoteToSuperAdmin()}
+                        disabled={promoting}
+                        className="px-3 py-1.5 text-xs font-medium bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-colors disabled:opacity-60"
+                      >
+                        {promoting ? 'Promoting…' : 'Confirm'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Promotion success message with onboarding instructions */}
+            {promoted && (
+              <div className="rounded-lg border border-emerald-800 bg-emerald-900/20 px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-emerald-300">
+                      {userDisplayName} is now a superadmin
+                    </p>
+                    <p className="mt-1 text-sm text-emerald-200/80">
+                      Share these instructions with them:
+                    </p>
+                    <div className="mt-2 rounded-md border border-emerald-800/60 bg-emerald-950/40 px-3 py-2">
+                      <p className="text-xs text-emerald-100/90 leading-relaxed">
+                        You now have superadmin access on NavHub. Sign out and sign back in,
+                        then open{' '}
+                        <span className="font-mono text-emerald-100">
+                          {(process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.navhub.co')}/admin/
+                        </span>{' '}
+                        to reach the admin console. The change takes effect after your next
+                        login.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.navhub.co'
+                        navigator.clipboard?.writeText(
+                          `You now have superadmin access on NavHub. Sign out and sign back in, ` +
+                          `then open ${appUrl}/admin/ to reach the admin console. ` +
+                          `The change takes effect after your next login.`,
+                        )
+                      }}
+                      className="mt-2 text-xs text-emerald-300 hover:text-emerald-200 border border-emerald-700/50 hover:border-emerald-500 px-2.5 py-1 rounded transition-colors"
+                    >
+                      Copy instructions
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 pt-2">
               <button
