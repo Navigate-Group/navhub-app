@@ -3073,7 +3073,7 @@ Green < 70% · Amber 70–90% · Red ≥ 90%
 ### New components
 - **`components/admin/SortableTable.tsx`** — generic sortable/searchable/filterable table (zinc admin theme)
 - **`components/admin/GroupFormModal.tsx`** — create/edit group: name, owner_email (create), subscription_tier, token_limit; POST/PATCH
-- **`components/admin/UserFormModal.tsx`** — create/edit user: email + password (create), group selector, role; POST/PATCH
+- **`components/admin/UserFormModal.tsx`** — create/edit user: email + password (create), group selector, role; POST/PATCH. Edit mode also shows a **superadmin promotion** control (`isSuperAdmin` prop, defaults true; hidden when the edited user is already super_admin): "Make Superadmin" → confirm dialog "Make [email] a superadmin?" → PATCH /api/admin/users/[id] {role:'super_admin'} (elevates default membership) → success message with copy-paste onboarding instructions (sign out/in, open /admin/)
 
 ### New/updated API routes
 ```
@@ -3082,7 +3082,7 @@ POST /api/admin/groups              → create group + invite owner via invite-l
 PATCH  /api/admin/groups/[id]       → update name/slug/tier/limit/is_active/owner_id + audit log
 DELETE /api/admin/groups/[id]       → soft delete (is_active=false); 409 if active companies; audit log
 POST /api/admin/users               → invite a user via invite-link flow (NO password param — rejects one if supplied): new user → group_invites + generateLink('invite') + invite_tokens + Resend "Accept invitation" email (sets own password via /set-password); existing user → added to group + magic-link notice. Audit log.
-PATCH  /api/admin/users/[id]        → update user_groups membership (role, group_id); upsert if no existing row
+PATCH  /api/admin/users/[id]        → update user_groups membership (role, group_id); upsert if no existing row. Special-cases role='super_admin' (system-wide promotion): verifies super_admin caller, elevates the target's supplied/default membership row to super_admin (no-op if already super_admin, 400 if user has no membership), writes a distinct 'promote_super_admin' audit entry
 DELETE /api/admin/users/[id]        → ban via auth.admin.updateUserById(id, { ban_duration: '876600h' }) + audit log
 GET  /api/admin/agents              → all agents across groups with run stats (total_runs, last_run_at, token_usage)
 GET  /api/admin/agents/[id]         → agent + group info
@@ -3099,7 +3099,7 @@ GET  /api/admin/audit               → paginated (?page=&limit=50&action=&entit
 ### Updated admin pages
 - **`/admin/groups`** — tier badge, token bar, "+ New Group" button, Edit/Deactivate per row
 - **`/admin/groups/[id]`** — tier badge, token bar, "Edit Group" → GroupFormModal, 8-field metadata grid
-- **`/admin/users`** — "+ New User" button → UserFormModal new-user form collects email + group + role only (NO password field); "Send Invite" emails an invite link and shows an "Invite sent to <email>" confirmation. "Edit" per row → UserFormModal multi-group management (pre-fills memberships)
+- **`/admin/users`** — "+ New User" button → UserFormModal new-user form collects email + group + role only (NO password field); "Send Invite" emails an invite link and shows an "Invite sent to <email>" confirmation. "Edit" per row → UserFormModal multi-group management (pre-fills memberships) + superadmin promotion control (passes `isSuperAdmin` — always true here since the whole /admin area is super_admin-gated)
 - **`/admin` dashboard** — Platform Token Usage MTD card (total bar + per-group mini breakdown)
 
 ### Admin nav (updated)

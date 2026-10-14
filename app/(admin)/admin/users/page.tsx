@@ -207,6 +207,9 @@ export default function AdminUsersPage() {
           user={editUser}
           onClose={() => { setShowModal(false); loadUsers() }}
           onSaved={handleSaved}
+          // This page lives under the superadmin-gated /admin area (enforced by
+          // middleware + layout), so the viewer is always a superadmin here.
+          isSuperAdmin
         />
       )}
     </div>
