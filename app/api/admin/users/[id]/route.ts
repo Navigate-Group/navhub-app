@@ -41,7 +41,12 @@ export async function PATCH(
 
   const admin  = createAdminClient()
   const userId = params.id
-  const { role, group_id } = await req.json() as { role?: string; group_id?: string }
+  const { role, group_id, demote_to } = await req.json() as {
+    role?: string
+    group_id?: string
+    /** Optional replacement role when demoting a superadmin (defaults to group_admin). */
+    demote_to?: string
+  }
 
   if (!role && !group_id) return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
 
@@ -90,6 +95,54 @@ export async function PATCH(
 
     await logAudit(admin, session.user.id, 'promote_super_admin', userId, { group_id: targetGroupId })
     return NextResponse.json({ success: true, promoted: true })
+  }
+
+  // ── Superadmin demotion ──────────────────────────────────────────────────────
+  // Demotion removes the system-wide super_admin privilege by changing every
+  // super_admin membership row for the user back to a regular group role. The user
+  // keeps their group memberships — only the super_admin flag (which grants /admin/
+  // access) is removed. The replacement role may be supplied via `demote_to`;
+  // otherwise it defaults to 'group_admin', matching the owner-demotion convention
+  // used elsewhere in the app.
+  if (role === 'demote_super_admin') {
+    const VALID_DEMOTE_ROLES = ['group_admin', 'manager', 'staff', 'viewer']
+    const replacementRole =
+      demote_to && VALID_DEMOTE_ROLES.includes(demote_to) ? demote_to : 'group_admin'
+
+    // Find the user's super_admin membership rows.
+    const { data: superRows } = await admin
+      .from('user_groups')
+      .select('group_id')
+      .eq('user_id', userId)
+      .eq('role', 'super_admin')
+
+    // Validation: cannot demote a user who is not (already) a superadmin.
+    if ((superRows?.length ?? 0) === 0) {
+      return NextResponse.json({ error: 'User is not a superadmin.' }, { status: 400 })
+    }
+
+    // Guard against removing the last superadmin in the system.
+    const { data: allSupers } = await admin
+      .from('user_groups')
+      .select('user_id')
+      .eq('role', 'super_admin')
+    const distinctSupers = new Set((allSupers ?? []).map(r => r.user_id))
+    if (distinctSupers.size <= 1 && distinctSupers.has(userId)) {
+      return NextResponse.json(
+        { error: 'Cannot demote the last superadmin. Promote another user first.' },
+        { status: 400 },
+      )
+    }
+
+    const { error: demoteErr } = await admin
+      .from('user_groups')
+      .update({ role: replacementRole })
+      .eq('user_id', userId)
+      .eq('role', 'super_admin')
+    if (demoteErr) return NextResponse.json({ error: demoteErr.message }, { status: 500 })
+
+    await logAudit(admin, session.user.id, 'demote_super_admin', userId, { demoted_to: replacementRole })
+    return NextResponse.json({ success: true, demoted: true, role: replacementRole })
   }
 
   const updates: Record<string, unknown> = {}

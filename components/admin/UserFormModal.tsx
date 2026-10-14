@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Plus, Star, Trash2, ShieldCheck } from 'lucide-react'
+import { X, Plus, Star, Trash2, ShieldCheck, ShieldOff } from 'lucide-react'
 
 interface Group {
   id:   string
@@ -73,6 +73,12 @@ export default function UserFormModal({ user, onClose, onSaved, isSuperAdmin = t
   const [promoting,          setPromoting]          = useState(false)
   const [promoteError,       setPromoteError]       = useState<string | null>(null)
   const [promoted,           setPromoted]           = useState(false)
+
+  // Superadmin demotion (edit mode) — confirm dialog + success message state
+  const [showDemoteConfirm, setShowDemoteConfirm] = useState(false)
+  const [demoting,          setDemoting]          = useState(false)
+  const [demoteError,       setDemoteError]       = useState<string | null>(null)
+  const [demoted,           setDemoted]           = useState(false)
 
   useEffect(() => {
     fetch('/api/admin/groups')
@@ -260,6 +266,33 @@ export default function UserFormModal({ user, onClose, onSaved, isSuperAdmin = t
     }
   }
 
+  async function handleDemoteFromSuperAdmin() {
+    if (!user) return
+    setDemoting(true)
+    setDemoteError(null)
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'demote_super_admin' }),
+      })
+      const json = await res.json() as { error?: string; role?: string }
+      if (!res.ok) { setDemoteError(json.error ?? 'Failed to demote user.'); return }
+      setShowDemoteConfirm(false)
+      setDemoted(true)
+      // Reflect the new role locally so the toggle hides immediately.
+      const newRole = json.role ?? 'group_admin'
+      setMemberships(prev => prev.map(m =>
+        m.role === 'super_admin' ? { ...m, role: newRole } : m,
+      ))
+      void loadMemberships()
+    } catch {
+      setDemoteError('Failed to demote user.')
+    } finally {
+      setDemoting(false)
+    }
+  }
+
   // The target user is already a superadmin if ANY membership carries the role.
   const isAlreadySuperAdmin = memberships.some(m => m.role === 'super_admin')
   const userDisplayName = user?.email ?? 'this user'
@@ -377,6 +410,21 @@ export default function UserFormModal({ user, onClose, onSaved, isSuperAdmin = t
             <div>
               <label className="block text-xs text-zinc-400 mb-1">Email</label>
               <p className="text-sm text-white font-mono">{user!.email}</p>
+            </div>
+
+            {/* Current superadmin status — shown for every edited user. */}
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Superadmin status</label>
+              {isAlreadySuperAdmin ? (
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-700/60 bg-amber-900/20 px-2.5 py-1 text-xs font-medium text-amber-200">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Superadmin
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-400">
+                  Not a superadmin
+                </span>
+              )}
             </div>
 
             {/* Group memberships table */}
@@ -588,6 +636,90 @@ export default function UserFormModal({ user, onClose, onSaved, isSuperAdmin = t
                     >
                       Copy instructions
                     </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Superadmin demotion ──────────────────────────────────────────
+                Visible only to superadmins, and only when the edited user is
+                currently a superadmin. Shows a confirmation dialog, then a
+                success message. The user keeps their group memberships and
+                access level — only the system-wide superadmin flag is removed. */}
+            {isSuperAdmin && isAlreadySuperAdmin && !demoted && (
+              <div className="border-t border-zinc-800 pt-4">
+                {!showDemoteConfirm && (
+                  <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <ShieldOff className="h-5 w-5 text-zinc-400 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-zinc-200">Remove superadmin access</p>
+                        <p className="mt-0.5 text-xs text-zinc-400">
+                          Revoke system-wide superadmin access, including the admin console
+                          at <span className="font-mono">/admin/</span>. The user keeps their
+                          group memberships and access level.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => { setDemoteError(null); setShowDemoteConfirm(true) }}
+                        className="shrink-0 px-3 py-1.5 text-xs font-medium border border-red-800 text-red-300 hover:bg-red-900/30 hover:text-red-200 rounded-lg transition-colors"
+                      >
+                        Remove Superadmin
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Confirmation dialog */}
+                {showDemoteConfirm && (
+                  <div className="rounded-lg border border-red-800 bg-red-900/20 px-4 py-4">
+                    <p className="text-sm font-medium text-red-100">
+                      Remove superadmin access from {userDisplayName}?
+                    </p>
+                    <p className="mt-1 text-xs text-red-200/80">
+                      They will lose system-wide access and the admin console, but keep their
+                      group memberships (demoted to Group Admin). This action is logged.
+                    </p>
+                    {demoteError && (
+                      <p className="mt-2 text-xs text-red-300 bg-red-950/40 border border-red-800 rounded px-2 py-1.5">
+                        {demoteError}
+                      </p>
+                    )}
+                    <div className="flex justify-end gap-2 mt-3">
+                      <button
+                        onClick={() => setShowDemoteConfirm(false)}
+                        disabled={demoting}
+                        className="px-3 py-1.5 text-xs text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => void handleDemoteFromSuperAdmin()}
+                        disabled={demoting}
+                        className="px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors disabled:opacity-60"
+                      >
+                        {demoting ? 'Removing…' : 'Confirm'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Demotion success message */}
+            {demoted && (
+              <div className="rounded-lg border border-zinc-700 bg-zinc-800/60 px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <ShieldOff className="h-5 w-5 text-zinc-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-200">
+                      Superadmin access removed from {userDisplayName}
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-400">
+                      They no longer have system-wide access or the admin console. Their group
+                      memberships and access level are unchanged. The change takes effect after
+                      their next login.
+                    </p>
                   </div>
                 </div>
               </div>
