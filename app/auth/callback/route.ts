@@ -14,8 +14,9 @@ export const runtime = 'nodejs'
 //   2. Look up every pending group_invites row for the user's email.
 //   3. Insert user_groups membership using the role recorded on the invite,
 //      copy any full_name into user_metadata, mark each invite accepted_at.
-//   4. Set active_group_id cookie to the FIRST claimed group when the user
-//      had no prior memberships.
+//   4. Set active_group_id cookie for EVERY logged-in user — the first claimed
+//      group when accepting an invite, otherwise the user's default (or first)
+//      existing membership. Users with no memberships get no cookie.
 //   5. Redirect to ?next= (default /landing).
 //
 // On code-exchange failure, redirect to /login?error=auth_failed.
@@ -86,6 +87,12 @@ export async function GET(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
   let firstClaimedGroupId: string | null = null
+  // Group the user should land on after login. Populated from a just-claimed
+  // invite when present, otherwise from the user's existing memberships below
+  // so EVERY logged-in user gets an active_group_id cookie — without it both
+  // /api/groups/active and /api/user/permissions return 400 and the dashboard
+  // reports "no access to any features".
+  let activeGroupId: string | null = null
 
   // Detect a newly-invited user who has not yet chosen a password. Users
   // created via admin invite (generateLink({ type: 'invite' }) — see
@@ -166,6 +173,27 @@ export async function GET(request: NextRequest) {
         }
       }
     }
+
+    // Resolve the active group for the cookie. A just-claimed invite wins so a
+    // brand-new invitee lands on the group they were invited to; otherwise fall
+    // back to an EXISTING membership so returning users (magic link / OAuth, no
+    // new invite) still receive the cookie. Prefer the default group, matching
+    // the dashboard layout's selection order (is_default descending, first row).
+    // user_groups has no created_at column (PK is user_id,group_id), so there is
+    // no reliable timestamp to order by — the first returned row stands in for
+    // "oldest/first" membership.
+    activeGroupId = firstClaimedGroupId
+    if (!activeGroupId) {
+      const { data: memberships } = await admin
+        .from('user_groups')
+        .select('group_id')
+        .eq('user_id', user.id)
+        .order('is_default', { ascending: false })
+        .limit(1)
+      // Users with zero memberships get no cookie; the dashboard layout
+      // redirects them to /landing (its own onboarding fallback).
+      activeGroupId = memberships?.[0]?.group_id ?? null
+    }
   }
 
   // Newly-invited users without a password go straight to the dedicated
@@ -188,8 +216,8 @@ export async function GET(request: NextRequest) {
   for (const cookie of response.cookies.getAll()) {
     redirect.cookies.set(cookie)
   }
-  if (firstClaimedGroupId) {
-    redirect.cookies.set('active_group_id', firstClaimedGroupId, {
+  if (activeGroupId) {
+    redirect.cookies.set('active_group_id', activeGroupId, {
       httpOnly: false,
       path:     '/',
       maxAge:   60 * 60 * 24 * 365,

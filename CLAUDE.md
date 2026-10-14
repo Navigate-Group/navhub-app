@@ -4702,7 +4702,15 @@ Supabase magic links now redirect to. It:
    the user has no existing default)
 4. Copies the first non-empty invite `full_name` into `user_metadata`
 5. Marks each invite `accepted_at = now()`
-6. Sets the `active_group_id` cookie to the first-claimed group
+6. Sets the `active_group_id` cookie for **every** logged-in user: the
+   first-claimed group when accepting an invite, otherwise the user's
+   existing default (or first) `user_groups` membership
+   (`order('is_default', { ascending: false }).limit(1)`). This ensures
+   returning users logging in via magic link / OAuth without a new invite
+   still receive the cookie — without it `/api/groups/active` and
+   `/api/user/permissions` return 400 and the dashboard shows "Contact
+   your administrator to get access to features". Users with zero
+   memberships get no cookie and fall through to `/landing`.
 7. Redirects to `?next=/landing`
 
 Existing-user invite emails now use
