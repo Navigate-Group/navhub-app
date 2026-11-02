@@ -28,7 +28,6 @@ import {
   getValuationMethods,
   getProducerPrice,
   getPrice,
-  getFxRate,
   type GeoUnit,
   type StructureEntry,
   type Operator,
