@@ -25,6 +25,7 @@ import {
   Plug,
   Home,
   MessageSquarePlus,
+  LineChart,
 } from 'lucide-react'
 import { signOut } from '@/app/(auth)/actions'
 import GroupSwitcher from './GroupSwitcher'
@@ -69,6 +70,9 @@ interface AppShellProps {
   activeGroup:      Group
   visibleFeatures?: FeatureKey[]
   userRole?:        AppRole
+  /** True when the user holds a Markets role (viewer/manager) or is a super admin —
+   *  controls the "Markets" sidebar entry (MKT-1). */
+  showMarkets?:     boolean
   /** Extra top offset in px (used when an overlay banner is present, e.g. impersonation) */
   topOffset?:       number
 }
@@ -77,7 +81,7 @@ interface AppShellProps {
 // Component
 // ============================================================
 
-export default function AppShell({ children, user, groups, activeGroup, visibleFeatures, userRole, topOffset = 0 }: AppShellProps) {
+export default function AppShell({ children, user, groups, activeGroup, visibleFeatures, userRole, showMarkets = false, topOffset = 0 }: AppShellProps) {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
 
@@ -290,6 +294,10 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
 
             {/* Agents — top level */}
             {show('agents') && <NavLink href="/agents" label="Agents" Icon={Bot} mobile={mobile} />}
+
+            {/* Markets — role-gated area (MKT-1). Visible only to Markets role
+                holders / super admins; links out of the NavHub shell. */}
+            {showMarkets && <NavLink href="/markets" label="Markets" Icon={LineChart} mobile={mobile} />}
 
             {/* Integrations — admin-only, between Agents and Settings */}
             {isAdmin && (
