@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { label: 'Dashboard',  href: '/admin' },
   { label: 'Groups',     href: '/admin/groups' },
   { label: 'Users',      href: '/admin/users' },
+  { label: 'Markets',    href: '/admin/markets' },
   { label: 'Agents',     href: '/admin/agents' },
   { label: 'Agent Runs', href: '/admin/agent-runs' },
   // ── Intelligence cluster ────────────────────────────────────────────

@@ -128,6 +128,60 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // ── Markets access enforcement (MKT-1) ────────────────────────────────────────
+  // Markets is a role-gated area backed by `market_user_roles`, independent of
+  // per-group roles. Super admins always pass. For the manage sub-tree and its
+  // API, a markets_manager (or super admin) is required; everything else under
+  // /markets needs at least markets_viewer.
+  const isMarketsPage   = pathname === '/markets' || pathname.startsWith('/markets/')
+  const isMarketsApi    = pathname.startsWith('/api/markets/')
+  if (isMarketsPage || isMarketsApi) {
+    const needsManager =
+      pathname.startsWith('/markets/manage') ||
+      pathname.startsWith('/api/markets/manage')
+
+    // Resolve effective access inline (avoids importing server-only helpers
+    // that pull in the service-role admin client into the edge middleware).
+    const { data: superRows } = await supabase
+      .from('user_groups')
+      .select('role')
+      .eq('user_id', session.user.id)
+      .eq('role', 'super_admin')
+      .limit(1)
+    const isSuper = (superRows?.length ?? 0) > 0
+
+    let hasViewer = isSuper
+    let hasManager = isSuper
+    if (!isSuper) {
+      const { data: marketRoles } = await supabase
+        .from('market_user_roles')
+        .select('role')
+        .eq('user_id', session.user.id)
+        .is('revoked_at', null)
+      const roles = new Set((marketRoles ?? []).map(r => (r as { role: string }).role))
+      hasManager = roles.has('markets_manager')
+      hasViewer  = hasManager || roles.has('markets_viewer')
+    }
+
+    if (needsManager && !hasManager) {
+      // Curation surfaces: hard 403 (no silent redirect) per the brief.
+      if (isMarketsApi) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      return new NextResponse('Forbidden', { status: 403 })
+    }
+
+    if (!needsManager && !hasViewer) {
+      if (isMarketsApi) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      // Non-Markets users are bounced to the app root with an error flag.
+      const home = new URL('/', request.url)
+      home.searchParams.set('error', 'markets_access')
+      return NextResponse.redirect(home)
+    }
+  }
+
   // ── Impersonation write-block ─────────────────────────────────────────────────
   // During impersonation, block all mutating API calls except:
   //   DELETE /api/admin/impersonate  (exit impersonation)

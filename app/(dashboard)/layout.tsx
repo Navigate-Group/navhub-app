@@ -8,6 +8,7 @@ import ImpersonationBanner        from '@/components/admin/ImpersonationBanner'
 import { getPalette, buildPaletteCSS } from '@/lib/themes'
 import { decrypt }                from '@/lib/encryption'
 import { getUserPermissions, getVisibleFeatures } from '@/lib/permissions'
+import { getMarketsAccess, canViewMarkets } from '@/lib/markets'
 import type { Group, UserGroup, AppRole, FeatureKey } from '@/lib/types'
 
 export default async function DashboardLayout({
@@ -98,6 +99,12 @@ export default async function DashboardLayout({
   const permissions = await getUserPermissions(session.user.id, activeUserGroup.group_id, userRole)
   const visibleFeatures: FeatureKey[] = getVisibleFeatures(permissions)
 
+  // ── Markets nav visibility (MKT-1) ──────────────────────────────────────────
+  // The "Markets" sidebar entry only appears for Markets role holders (viewer /
+  // manager) or super admins. Access is global, independent of the active group.
+  const marketsAccess = await getMarketsAccess(supabase, session.user.id)
+  const showMarkets   = canViewMarkets(marketsAccess)
+
   return (
     <>
       {/*
@@ -135,6 +142,7 @@ export default async function DashboardLayout({
         activeGroup={activeGroup}
         visibleFeatures={visibleFeatures}
         userRole={userRole}
+        showMarkets={showMarkets}
         // Push content down when impersonation banner is visible
         topOffset={impersonatedGroupName ? 36 : 0}
       >
