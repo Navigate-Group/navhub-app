@@ -87,7 +87,7 @@ export default function OverviewExplorer() {
   const mapCard = view.rankings.find(r => r.measure === mapMeasure)
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
+    <div className="w-full space-y-4">
       <div>
         <h1 className="text-2xl font-bold">Overview</h1>
         <p className="text-sm text-muted-foreground">

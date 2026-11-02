@@ -189,6 +189,29 @@ function countriesInScope(scope: ScopeOption): GeoUnit[] {
   return COUNTRIES.filter(c => (c.zones ?? []).includes(scope.id))
 }
 
+/**
+ * The geo-unit countries that actually PRODUCE a given commodity — i.e. that
+ * carry at least one observation for it (any measure, any season). This is the
+ * denominator for a ranking's "no figure" note: a mango-only country must not be
+ * counted as missing a banana figure, and vice-versa. Sub-national regions and
+ * the WLD aggregate are excluded because only `COUNTRIES` ids can match.
+ */
+const COMMODITY_COUNTRY_IDS: Record<string, Set<string>> = (() => {
+  const countryIdSet = new Set(COUNTRIES.map(c => c.id))
+  const out: Record<string, Set<string>> = {}
+  for (const o of OBSERVATIONS) {
+    if (!countryIdSet.has(o.geo)) continue
+    ;(out[o.commodity] = out[o.commodity] ?? new Set<string>()).add(o.geo)
+  }
+  return out
+})()
+
+/** Countries within `scope` that produce `commodity` (ranking country set). */
+function rankingCountries(commodity: string, scope: ScopeOption): GeoUnit[] {
+  const producing = COMMODITY_COUNTRY_IDS[commodity] ?? new Set<string>()
+  return countriesInScope(scope).filter(c => producing.has(c.id))
+}
+
 // ── Measure resolution (per country, honouring valuation + fill) ────────────
 
 interface MeasureCell {
@@ -316,6 +339,46 @@ function resolveMultiSeason(
   }
 }
 
+/**
+ * Multi-season resolution for RANKINGS. Unlike `resolveMultiSeason` (which sums
+ * whatever seasons are present), a ranked country must have a figure for EVERY
+ * selected season — otherwise a country reporting only one of several seasons
+ * would be ranked on a partial total and distort the share. A ratio measure
+ * (export_share) still averages whatever seasons are present.
+ *
+ * Example: combined 2020 + 2024 banana production excludes Nigeria (2024 only),
+ * giving a 242.0 Mt all-ranked total rather than 249.0 Mt with Nigeria.
+ */
+function resolveMultiSeasonStrict(
+  commodity: string,
+  measure: ExplorerMeasure,
+  seasons: string[],
+  geo: string,
+  method: ValuationMethod,
+  fill: boolean,
+  annualAverage: boolean,
+): MeasureCell {
+  // Ratios: keep the averaging behaviour (a partial-season share is still a
+  // meaningful average), so defer to the standard resolver.
+  if (measure === 'export_share') {
+    return resolveMultiSeason(commodity, measure, seasons, geo, method, fill, annualAverage)
+  }
+  const cells = seasons.map(s => resolveMeasure(commodity, measure, s, geo, method, fill))
+  const noPrice = cells.some(c => c.noPrice)
+  // Require ALL selected seasons to resolve.
+  if (cells.some(c => c.value == null)) {
+    return { value: null, filled: false, noPrice }
+  }
+  const sum = cells.reduce((acc, c) => acc + (c.value as number), 0)
+  const value = annualAverage ? sum / cells.length : sum
+  return {
+    value,
+    filled: cells.some(c => c.filled),
+    filledFrom: cells.find(c => c.filled)?.filledFrom,
+    noPrice,
+  }
+}
+
 // ── View-model output shapes ────────────────────────────────────────────────
 
 export interface HeadlineCard {
@@ -366,9 +429,11 @@ export interface RankingList {
   unit: string
   format: string
   rows: RankingRow[]
-  /** total across the ranked rows (used for share). */
+  /** total across ALL ranked (present) countries — the share denominator. */
   total: number
-  /** countries in scope with no value for this measure. */
+  /** number of ranked (present) countries contributing to `total`. */
+  rankedCount: number
+  /** countries in scope (that produce this commodity) with no value for this measure. */
   missingCount: number
   /** countries skipped because no price was available (value only). */
   noPriceCount: number
@@ -531,35 +596,52 @@ export function buildExplorerView(params: ExplorerParams): ExplorerView {
   })
 
   // ── Rankings (top N within scope) ────────────────────────────────────────
+  // The ranking country set is the commodity's producing countries within the
+  // scope (not every seeded country) so a mango-only country is never counted
+  // as "missing" a banana figure. A ranked country must resolve a figure for
+  // EVERY selected season (strict), and the share denominator is the total over
+  // ALL ranked countries — not just the displayed top N.
   const rankingSize = CONFIG.ranking_size ?? 10
+  const rankingScopeCountries = rankingCountries(commodity, scope)
   const rankings: RankingList[] = RANKING_MEASURES.map(measure => {
     const mm = measureMeta(measure)
     const isRatio = measure === 'export_share'
-    const resolved = scopeCountries.map(c => ({
+    const resolved = rankingScopeCountries.map(c => ({
       c,
-      cell: resolveMultiSeason(commodity, measure, seasons, c.id, method, fillGaps, annualAverage),
+      cell: resolveMultiSeasonStrict(commodity, measure, seasons, c.id, method, fillGaps, annualAverage),
     }))
     const present = resolved.filter(r => r.cell.value != null)
     const missingCount = resolved.length - present.length
     const noPriceCount = resolved.filter(r => r.cell.value == null && r.cell.noPrice).length
-    const sorted = present
+
+    // Total across ALL ranked (present) countries — the share denominator.
+    const total = present.reduce((acc, r) => acc + (r.cell.value as number), 0)
+
+    const ranked = present
+      .slice()
       .sort((a, b) => (b.cell.value as number) - (a.cell.value as number))
-      .slice(0, rankingSize)
-    // For level measures, share is of the ranked-countries total; for a ratio,
-    // the "share of total" is not meaningful, so we report the value itself as
-    // the bar fraction relative to the largest value.
-    const total = isRatio
-      ? Math.max(...sorted.map(r => r.cell.value as number), 0)
-      : sorted.reduce((acc, r) => acc + (r.cell.value as number), 0)
-    const rows: RankingRow[] = sorted.map((r, i) => ({
-      rank: i + 1,
-      iso3: r.c.id,
-      name: r.c.name,
-      value: r.cell.value as number,
-      share: total > 0 ? (r.cell.value as number) / total : 0,
-      filled: r.cell.filled,
-      filledFrom: r.cell.filledFrom,
-    }))
+    const displayed = ranked.slice(0, rankingSize)
+
+    // Bar fraction: level measures use share of the all-ranked total; a ratio is
+    // not a share of a total, so its bar is relative to the largest ranked value.
+    const barBase = isRatio
+      ? Math.max(...ranked.map(r => r.cell.value as number), 0)
+      : total
+
+    const rows: RankingRow[] = displayed.map((r, i) => {
+      const value = r.cell.value as number
+      return {
+        rank: i + 1,
+        iso3: r.c.id,
+        name: r.c.name,
+        value,
+        // share is always the country's share of the all-ranked total (level
+        // measures); the bar width uses barBase (same as share for levels).
+        share: isRatio ? (barBase > 0 ? value / barBase : 0) : total > 0 ? value / total : 0,
+        filled: r.cell.filled,
+        filledFrom: r.cell.filledFrom,
+      }
+    })
     return {
       measure,
       label: mm.label,
@@ -567,6 +649,7 @@ export function buildExplorerView(params: ExplorerParams): ExplorerView {
       format: mm.format,
       rows,
       total,
+      rankedCount: present.length,
       missingCount,
       noPriceCount,
     }

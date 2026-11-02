@@ -26,6 +26,22 @@
     --input:                 240 5.9% 90%;
     --ring:                  240 5.9% 10%;
     --radius:                0.5rem;
+
+    /* Markets data-viz tokens (MKT-3).
+       Six-class sequential ramp for the choropleth (light → dark), the two
+       neutral map states, and the ranking-bar fill. HSL triples so they can be
+       used as `hsl(var(--map-1))`. The ramp is a blue sequence tuned to the
+       NavHub primary hue (~199°). */
+    --map-1:                 204 94% 94%;
+    --map-2:                 201 90% 84%;
+    --map-3:                 200 88% 70%;
+    --map-4:                 199 89% 55%;
+    --map-5:                 200 94% 42%;
+    --map-6:                 201 96% 30%;
+    --map-nodata:            240 5% 88%;
+    --map-outscope:          240 5% 96%;
+    --data:                  199 89% 48%;
+    --data-soft:             200 90% 88%;
   }
 
   .dark {
@@ -49,6 +65,21 @@
     --border:                240 3.7% 15.9%;
     --input:                 240 3.7% 15.9%;
     --ring:                  240 4.9% 83.9%;
+
+    /* Markets data-viz tokens (MKT-3) — dark theme.
+       Same six-class blue ramp, re-tuned for dark surfaces (lower minimum
+       lightness so the lightest class still reads against the dark card, and a
+       brighter top end for contrast). */
+    --map-1:                 205 45% 24%;
+    --map-2:                 203 55% 32%;
+    --map-3:                 201 65% 40%;
+    --map-4:                 199 75% 48%;
+    --map-5:                 198 85% 58%;
+    --map-6:                 197 92% 70%;
+    --map-nodata:            240 4% 24%;
+    --map-outscope:          240 5% 15%;
+    --data:                  199 85% 55%;
+    --data-soft:             200 50% 28%;
   }
 }
 
