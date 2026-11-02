@@ -9,37 +9,44 @@ import {
   MAP_MEASURES,
 } from '@/lib/markets/explorer'
 import { formatMeasure } from './format'
+import topology from '@/lib/markets/vendor/countries-110m.json'
+import {
+  decodeCountries,
+  makeProjection,
+  featurePath,
+  normaliseM49,
+  type Topology,
+  type CountryFeature,
+} from '@/lib/markets/vendor/geo'
 
 /**
- * A tile-grid choropleth. Every seeded country is rendered as a tile keyed by
- * its M49 code, grouped by continent, and shaded by a quantile scale of the
- * current measure. A geographic SVG would need country path geometry that is
- * not available in this repo (no map library / topojson); the tile-grid is a
- * recognised choropleth style that keeps all the required behaviour — M49 key,
- * quantile legend, hover tooltip, click drill-down and distinct 'no data' /
- * 'outside scope' states.
+ * Geographic world choropleth. Country geometry comes from the vendored
+ * world-atlas 110m topology (lib/markets/vendor), decoded to GeoJSON polygons
+ * and projected with an equirectangular projection. Each country path is joined
+ * to the explorer's per-country figures by M49 code (leading zeros stripped on
+ * both sides, so 036 / 076 etc. match) and shaded by a six-class quantile
+ * scale, with distinct 'no data' and 'outside scope' fills. Hover shows the
+ * figure; clicking an in-scope country drills into its profile.
  */
 
-// Quantile buckets: light → dark. Uses the Markets primary hue for continuity.
-const BUCKET_COLORS = [
-  'hsl(var(--primary) / 0.15)',
-  'hsl(var(--primary) / 0.35)',
-  'hsl(var(--primary) / 0.55)',
-  'hsl(var(--primary) / 0.75)',
-  'hsl(var(--primary) / 0.95)',
+// Six quantile classes, filled from the CSS data-viz ramp tokens so the map
+// renders correctly in both light and dark themes.
+const BUCKET_FILLS = [
+  'hsl(var(--map-1))',
+  'hsl(var(--map-2))',
+  'hsl(var(--map-3))',
+  'hsl(var(--map-4))',
+  'hsl(var(--map-5))',
+  'hsl(var(--map-6))',
 ]
-const BUCKET_COUNT = BUCKET_COLORS.length
+const BUCKET_COUNT = BUCKET_FILLS.length
+const NO_DATA_FILL = 'hsl(var(--map-nodata))'
+const OUT_SCOPE_FILL = 'hsl(var(--map-outscope))'
 
-const CONTINENT_ORDER = [
-  'North & Central America',
-  'South America',
-  'Europe',
-  'Africa',
-  'Asia',
-  'Oceania',
-]
+const VIEW_W = 960
+const VIEW_H = 480
 
-/** Compute quantile thresholds for the in-scope values. */
+/** Equal-count quantile thresholds (BUCKET_COUNT − 1 cut points). */
 function quantileThresholds(values: number[]): number[] {
   const sorted = values.slice().sort((a, b) => a - b)
   if (sorted.length === 0) return []
@@ -79,6 +86,22 @@ export default function ChoroplethMap({
   const router = useRouter()
   const [hover, setHover] = useState<MapCountry | null>(null)
 
+  // Decode + project the country geometry once (static data).
+  const features = useMemo<Array<CountryFeature & { d: string }>>(() => {
+    const project = makeProjection({ width: VIEW_W, height: VIEW_H })
+    return decodeCountries(topology as unknown as Topology, 'countries').map(f => ({
+      ...f,
+      d: featurePath(f, project),
+    }))
+  }, [])
+
+  // Join country figures by normalised M49.
+  const byM49 = useMemo(() => {
+    const m = new Map<string, MapCountry>()
+    for (const c of map) m.set(normaliseM49(c.m49), c)
+    return m
+  }, [map])
+
   const inScopeValues = useMemo(
     () => map.filter(c => c.state === 'in-scope' && c.value != null).map(c => c.value as number),
     [map],
@@ -89,30 +112,21 @@ export default function ChoroplethMap({
     return { min: Math.min(...inScopeValues), max: Math.max(...inScopeValues) }
   }, [inScopeValues])
 
-  const byContinent = useMemo(() => {
-    const groups: Record<string, MapCountry[]> = {}
-    for (const c of map) {
-      const key = c.continent ?? 'Other'
-      ;(groups[key] = groups[key] ?? []).push(c)
-    }
-    for (const k of Object.keys(groups)) {
-      groups[k].sort((a, b) => a.name.localeCompare(b.name))
-    }
-    return groups
-  }, [map])
-
-  const orderedContinents = useMemo(() => {
-    const present = Object.keys(byContinent)
-    const ordered = CONTINENT_ORDER.filter(c => present.includes(c))
-    const extra = present.filter(c => !CONTINENT_ORDER.includes(c)).sort()
-    return [...ordered, ...extra]
-  }, [byContinent])
-
-  const tileColor = (c: MapCountry): string => {
-    if (c.state === 'outside-scope') return 'hsl(var(--muted))'
-    if (c.state === 'no-data' || c.value == null) return 'hsl(var(--muted) / 0.4)'
-    return BUCKET_COLORS[bucketOf(c.value, thresholds)]
+  const fillFor = (c: MapCountry | undefined): string => {
+    if (!c || c.state === 'outside-scope') return OUT_SCOPE_FILL
+    if (c.state === 'no-data' || c.value == null) return NO_DATA_FILL
+    return BUCKET_FILLS[bucketOf(c.value, thresholds)]
   }
+
+  // Legend swatch labels: the upper bound of each class (except the last).
+  const legendClasses = useMemo(
+    () =>
+      BUCKET_FILLS.map((fill, i) => ({
+        fill,
+        upper: i < thresholds.length ? thresholds[i] : null,
+      })),
+    [thresholds],
+  )
 
   return (
     <div className="rounded-xl border border-border bg-card p-4">
@@ -143,55 +157,50 @@ export default function ChoroplethMap({
         </div>
       </div>
 
-      {/* Tile grid, grouped by continent */}
+      {/* Geographic SVG map */}
       <div className="relative">
-        <div className="space-y-3">
-          {orderedContinents.map(cont => (
-            <div key={cont}>
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {cont}
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {byContinent[cont].map(c => {
-                  const clickable = c.state !== 'outside-scope'
-                  return (
-                    <button
-                      key={c.iso3}
-                      type="button"
-                      data-m49={c.m49}
-                      disabled={!clickable}
-                      onMouseEnter={() => setHover(c)}
-                      onMouseLeave={() => setHover(h => (h?.iso3 === c.iso3 ? null : h))}
-                      onFocus={() => setHover(c)}
-                      onClick={() => clickable && router.push(`/markets/country/${c.iso3}`)}
-                      title={`${c.name} (M49 ${c.m49})`}
-                      className={cn(
-                        'flex h-10 w-14 flex-col items-center justify-center rounded border text-[10px] font-medium leading-tight transition-transform',
-                        clickable ? 'cursor-pointer hover:scale-105 hover:ring-1 hover:ring-primary' : 'cursor-default opacity-60',
-                        c.state === 'no-data' && 'border-dashed',
-                        c.state === 'outside-scope' && 'border-border/50',
-                      )}
-                      style={{ backgroundColor: tileColor(c) }}
-                    >
-                      <span
-                        className={cn(
-                          c.state === 'in-scope' && bucketOf(c.value as number, thresholds) >= 3
-                            ? 'text-white'
-                            : 'text-foreground',
-                        )}
-                      >
-                        {c.iso3}
-                      </span>
-                      {c.state === 'no-data' && (
-                        <span className="text-[8px] text-muted-foreground">no data</span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+        <svg
+          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          className="h-auto w-full"
+          role="img"
+          aria-label={`World choropleth of ${measureLabel}`}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <g>
+            {features.map(f => {
+              const c = byM49.get(normaliseM49(f.id))
+              const clickable = !!c && c.state !== 'outside-scope'
+              const active = !!hover && c?.iso3 === hover.iso3
+              return (
+                <path
+                  key={f.id || f.name}
+                  d={f.d}
+                  fill={fillFor(c)}
+                  stroke="hsl(var(--border))"
+                  strokeWidth={active ? 1.2 : 0.4}
+                  className={cn(
+                    'transition-[stroke-width,opacity]',
+                    clickable ? 'cursor-pointer hover:opacity-80' : 'cursor-default',
+                  )}
+                  onMouseEnter={() => c && setHover(c)}
+                  onMouseLeave={() => setHover(h => (h?.iso3 === c?.iso3 ? null : h))}
+                  onClick={() => clickable && c && router.push(`/markets/country/${c.iso3}`)}
+                >
+                  {c && (
+                    <title>
+                      {c.name}
+                      {c.state === 'outside-scope'
+                        ? ' — outside current scope'
+                        : c.value == null
+                          ? ' — no data'
+                          : ` — ${measureLabel}: ${formatMeasure(c.value, measureFormat)}`}
+                    </title>
+                  )}
+                </path>
+              )
+            })}
+          </g>
+        </svg>
 
         {/* Hover tooltip */}
         {hover && (
@@ -213,17 +222,23 @@ export default function ChoroplethMap({
         )}
       </div>
 
-      {/* Quantile legend + state keys */}
+      {/* Six-class legend + state keys */}
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <span>Low</span>
-          <div className="flex">
-            {BUCKET_COLORS.map((col, i) => (
-              <span
-                key={i}
-                className="h-3 w-5 border border-border/40"
-                style={{ backgroundColor: col }}
-              />
+          <div className="flex items-end">
+            {legendClasses.map((cls, i) => (
+              <span key={i} className="flex flex-col items-center">
+                <span
+                  className="h-3 w-6 border border-border/40"
+                  style={{ backgroundColor: cls.fill }}
+                />
+                {cls.upper != null && (
+                  <span className="mt-0.5 text-[9px] tabular-nums text-muted-foreground/70">
+                    {formatMeasure(cls.upper, measureFormat)}
+                  </span>
+                )}
+              </span>
             ))}
           </div>
           <span>High</span>
@@ -234,11 +249,17 @@ export default function ChoroplethMap({
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-3 w-5 rounded-sm border border-dashed border-border" style={{ backgroundColor: 'hsl(var(--muted) / 0.4)' }} />
+          <span
+            className="h-3 w-6 rounded-sm border border-border"
+            style={{ backgroundColor: NO_DATA_FILL }}
+          />
           <span>No data</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-3 w-5 rounded-sm border border-border/50" style={{ backgroundColor: 'hsl(var(--muted))' }} />
+          <span
+            className="h-3 w-6 rounded-sm border border-border/50"
+            style={{ backgroundColor: OUT_SCOPE_FILL }}
+          />
           <span>Outside scope</span>
         </div>
       </div>

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:markets": "node --test --experimental-strip-types lib/markets/compute.test.ts"
+    "test:markets": "node --test --experimental-strip-types --loader ./lib/markets/ts-ext-loader.mjs lib/markets/compute.test.ts lib/markets/explorer.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",
