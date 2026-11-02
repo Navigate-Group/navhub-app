@@ -1,0 +1,5512 @@
+{
+ "meta": {
+  "schema": "markets-observation/0.3",
+  "built": "2026-11-01",
+  "prototype": true,
+  "disclaimer": "Prototype built from public data. Figures carry their source, season and confidence. Not for trading decisions.",
+  "intro": "Where {commodity} are grown, what they are worth, who exports them and who runs the farms. Every figure carries its source and season; gaps are flagged, never hidden."
+ },
+ "context": {
+  "group": "Navigate",
+  "company": "Demo Agribusiness",
+  "module": "Markets",
+  "badge": "Prototype · sample data"
+ },
+ "category": {
+  "id": "agriculture",
+  "label": "Agriculture",
+  "farm_classifications": [
+   {
+    "id": "area_size",
+    "label": "Area size",
+    "classes": [
+     "<2 ha",
+     "2-20 ha",
+     "20-100 ha",
+     "100-500 ha",
+     "500-2,000 ha",
+     "2,000+ ha"
+    ]
+   },
+   {
+    "id": "turnover",
+    "label": "Turnover",
+    "classes": [
+     "Small",
+     "Medium",
+     "Large",
+     "Very large"
+    ]
+   },
+   {
+    "id": "ownership",
+    "label": "Ownership",
+    "classes": [
+     "Family",
+     "Corporate",
+     "Other"
+    ]
+   }
+  ],
+  "status_labels": {
+   "ok": "Have",
+   "part": "Partial",
+   "gap": "Gap"
+  }
+ },
+ "commodities": {
+  "banana": {
+   "id": "banana",
+   "name": "Bananas",
+   "codes": [
+    {
+     "scheme": "FAO item",
+     "code": "486"
+    },
+    {
+     "scheme": "HS",
+     "code": "0803"
+    }
+   ],
+   "scope_note": "Fresh bananas; some national series include plantains",
+   "season_basis": "FAOSTAT calendar year. Australian figures for 2024/25 are mapped to 2024.",
+   "seasons": [
+    "2000",
+    "2010",
+    "2020",
+    "2023",
+    "2024"
+   ],
+   "default_season": "2024",
+   "default_country": "ECU",
+   "valuation_methods": [
+    {
+     "id": "global_us",
+     "label": "Global price (US import)",
+     "price_series": "wb_banana_us",
+     "description": "Every country's output valued at the World Bank US import price for that season.",
+     "caveat": "An import price at destination port. It includes shipping and overstates farm-gate value, most for domestic-market growers."
+    },
+    {
+     "id": "global_eu",
+     "label": "Global price (EU import)",
+     "price_series": "wb_banana_eu",
+     "description": "Every country's output valued at the World Bank EU import price for that season.",
+     "caveat": "An import price at destination port; overstates farm-gate value."
+    },
+    {
+     "id": "local",
+     "label": "Local producer price",
+     "price_measure": "producer_price",
+     "description": "Each country's output valued at its own farm-gate price, converted to USD.",
+     "caveat": "Most FAO producer prices in this sample are 2014-2018; where the price year differs from the season, the value is flagged."
+    }
+   ],
+   "structure": {
+    "AUS": {
+     "note": "About 500 farms, most family-run. The largest, the family-owned Mackay Farming Group, grows about 13% of national output across 9 farms.",
+     "classifications": {
+      "area_size": [
+       "part",
+       "Not published by ABGC"
+      ],
+      "turnover": [
+       "part",
+       "ABS value-of-operations bands available"
+      ],
+      "ownership": [
+       "ok",
+       "Mostly family"
+      ]
+     },
+     "breakdowns": [
+      {
+       "label": "Share of national output",
+       "parts": [
+        {
+         "label": "Mackay Farming Group",
+         "share": 0.13
+        },
+        {
+         "label": "Other ~499 farms",
+         "share": 0.87
+        }
+       ]
+      }
+     ],
+     "sources": [
+      "abgc",
+      "jll"
+     ]
+    },
+    "ECU": {
+     "note": "About 5,000 small producers hold roughly 30% of plantations and sell through cooperatives to exporters; large, technically advanced growers supply most exports. Los Ríos, El Oro and Guayas held 91% of commercial area in 2009.",
+     "classifications": {
+      "area_size": [
+       "part",
+       "Small growers ≈30% of plantation area"
+      ],
+      "turnover": [
+       "gap",
+       "No data"
+      ],
+      "ownership": [
+       "part",
+       "Large exporters dominate"
+      ]
+     },
+     "breakdowns": [
+      {
+       "label": "Plantation area by grower size (c. 2009-13)",
+       "parts": [
+        {
+         "label": "~5,000 small producers",
+         "share": 0.3
+        },
+        {
+         "label": "Medium and large",
+         "share": 0.7
+        }
+       ]
+      }
+     ],
+     "sources": [
+      "promusa_ec"
+     ]
+    },
+    "PHL": {
+     "note": "Export Cavendish comes from commercial plantations, from 2-20 ha monocrops up to multinational estates; smallholders mostly grow Saba and Lakatan for local markets. Mindanao held 99% of Cavendish in 2018.",
+     "classifications": {
+      "area_size": [
+       "part",
+       "2-20 ha small plantations named"
+      ],
+      "turnover": [
+       "gap",
+       "No data"
+      ],
+      "ownership": [
+       "part",
+       "Corporate for export, family for local"
+      ]
+     },
+     "breakdowns": [],
+     "sources": [
+      "promusa_ph"
+     ]
+    },
+    "IND": {
+     "note": "State production is available. Farm counts by size and ownership need the Agriculture Census or Horticulture Statistics tables.",
+     "classifications": {
+      "area_size": [
+       "gap",
+       "Needs Agriculture Census"
+      ],
+      "turnover": [
+       "gap",
+       "No data"
+      ],
+      "ownership": [
+       "gap",
+       "No data"
+      ]
+     },
+     "breakdowns": [],
+     "sources": [
+      "ceic_nhb"
+     ]
+    }
+   },
+   "gap_sources": {
+    "PHL": {
+     "regions": "PSA Major Fruit Crops regional tables"
+    },
+    "ECU": {
+     "regions": "MAG / ESPAC provincial data"
+    },
+    "_default": {
+     "regions": "National agricultural statistics office",
+     "operators": "Certification and export registries",
+     "structure": "National agricultural census"
+    }
+   },
+   "operators": [
+    {
+     "name": "Mackay Farming Group",
+     "country": "AUS",
+     "region": "Tully & Lakeland, QLD",
+     "ownership": "Family",
+     "role": "Grower",
+     "size": "9 farms; ~13% of AU output",
+     "status": "Verified",
+     "source": "jll"
+    },
+    {
+     "name": "Australian Banana Growers' Council",
+     "country": "AUS",
+     "region": "National",
+     "ownership": "Industry body",
+     "role": "Association",
+     "size": "Represents ~500 farms",
+     "status": "Verified",
+     "source": "abgc"
+    },
+    {
+     "name": "Dole Philippines (Itochu)",
+     "country": "PHL",
+     "region": "Mindanao",
+     "ownership": "Corporate",
+     "role": "Grower & exporter",
+     "size": "~540,000 t (2015)",
+     "status": "Verified",
+     "source": "promusa_ph"
+    },
+    {
+     "name": "Mindanao Banana Farmers and Exporters Association",
+     "country": "PHL",
+     "region": "Mindanao",
+     "ownership": "Industry body",
+     "role": "Association",
+     "size": "Small-scale Cavendish exporters",
+     "status": "Verified",
+     "source": "promusa_ph"
+    },
+    {
+     "name": "Lapanday Foods Corporation",
+     "country": "PHL",
+     "region": "Davao",
+     "ownership": "Corporate",
+     "role": "Grower & exporter",
+     "size": "Unknown",
+     "status": "To verify",
+     "source": null
+    },
+    {
+     "name": "Sumifru Philippines",
+     "country": "PHL",
+     "region": "Mindanao",
+     "ownership": "Corporate",
+     "role": "Grower & exporter",
+     "size": "Unknown",
+     "status": "To verify",
+     "source": null
+    },
+    {
+     "name": "Asociación de Exportadores de Banano del Ecuador (AEBE)",
+     "country": "ECU",
+     "region": "National",
+     "ownership": "Industry body",
+     "role": "Association",
+     "size": "Reports national exports",
+     "status": "Verified",
+     "source": "aebe"
+    },
+    {
+     "name": "Corporación Noboa (Bonita)",
+     "country": "ECU",
+     "region": "Guayas / Los Ríos",
+     "ownership": "Corporate",
+     "role": "Grower & exporter",
+     "size": "Unknown",
+     "status": "To verify",
+     "source": null
+    },
+    {
+     "name": "Reybanpac (Favorita group)",
+     "country": "ECU",
+     "region": "Los Ríos",
+     "ownership": "Corporate",
+     "role": "Grower & exporter",
+     "size": "Unknown",
+     "status": "To verify",
+     "source": null
+    },
+    {
+     "name": "Dole plc",
+     "country": "Global",
+     "region": "Multi-country",
+     "ownership": "Corporate",
+     "role": "Marketer & grower",
+     "size": "Unknown",
+     "status": "To verify",
+     "source": null
+    },
+    {
+     "name": "Chiquita",
+     "country": "Global",
+     "region": "Multi-country",
+     "ownership": "Corporate",
+     "role": "Marketer & grower",
+     "size": "Unknown",
+     "status": "To verify",
+     "source": null
+    },
+    {
+     "name": "Fresh Del Monte Produce",
+     "country": "Global",
+     "region": "Multi-country",
+     "ownership": "Corporate",
+     "role": "Marketer & grower",
+     "size": "Unknown",
+     "status": "To verify",
+     "source": null
+    }
+   ],
+   "crm": {
+    "id_prefix": "NH-BAN-",
+    "industry_label": "Agriculture / Bananas"
+   }
+  },
+  "mango": {
+   "id": "mango",
+   "name": "Mangoes",
+   "codes": [
+    {
+     "scheme": "FAO item",
+     "code": "571"
+    },
+    {
+     "scheme": "HS",
+     "code": "080450"
+    }
+   ],
+   "scope_note": "Mangoes, mangosteens and guavas, as FAO and HS group them",
+   "season_basis": "FAOSTAT calendar year. Australian figures for 2020/21 are mapped to 2020.",
+   "seasons": [
+    "2020",
+    "2023",
+    "2024"
+   ],
+   "default_season": "2024",
+   "default_country": "MEX",
+   "valuation_methods": [
+    {
+     "id": "global",
+     "label": "World export price",
+     "price_series": "mango_world_export",
+     "description": "Every country's output valued at the world average mango export price for that season.",
+     "caveat": "An export (FOB) price for traded fruit. It overstates the value of fruit sold on local markets, which is most mango output."
+    },
+    {
+     "id": "local",
+     "label": "Local producer price",
+     "price_measure": "producer_price",
+     "description": "Each country's output valued at its own farm-gate price, converted to USD.",
+     "caveat": "No mango producer prices are in this sample yet."
+    }
+   ],
+   "structure": {
+    "AUS": {
+     "note": "The Northern Territory grew 54% of the 2020/21 crop and Queensland 43%. NT output reached 4.3 million trays in 2025-26 from about 6,350 ha, with Darwin and Katherine the two regions. Grower numbers are not in this sample.",
+     "classifications": {
+      "area_size": [
+       "part",
+       "NT area total only"
+      ],
+      "turnover": [
+       "gap",
+       "No data"
+      ],
+      "ownership": [
+       "gap",
+       "No data"
+      ]
+     },
+     "breakdowns": [
+      {
+       "label": "Production by state, 2020/21",
+       "parts": [
+        {
+         "label": "Northern Territory",
+         "share": 0.54
+        },
+        {
+         "label": "Queensland",
+         "share": 0.43
+        },
+        {
+         "label": "WA and NSW",
+         "share": 0.03
+        }
+       ]
+      }
+     ],
+     "sources": [
+      "hort_mango",
+      "arrn_nt"
+     ]
+    },
+    "IND": {
+     "note": "Uttar Pradesh and Andhra Pradesh grow about 40% of India's mangoes. Most fruit is sold fresh at home or processed into pulp; farm counts by size and ownership need the Agriculture Census.",
+     "classifications": {
+      "area_size": [
+       "gap",
+       "Needs Agriculture Census"
+      ],
+      "turnover": [
+       "gap",
+       "No data"
+      ],
+      "ownership": [
+       "gap",
+       "No data"
+      ]
+     },
+     "breakdowns": [],
+     "sources": [
+      "ceic_mango"
+     ]
+    }
+   },
+   "gap_sources": {
+    "MEX": {
+     "regions": "SIAP state production tables"
+    },
+    "PAK": {
+     "regions": "Pakistan Bureau of Statistics fruit tables"
+    }
+   },
+   "operators": [
+    {
+     "name": "Australian Mango Industry Association",
+     "country": "AUS",
+     "region": "National",
+     "ownership": "Industry body",
+     "role": "Association",
+     "size": "Represents growers nationally",
+     "status": "To verify",
+     "source": null
+    },
+    {
+     "name": "Empacadoras de Mango de Exportación (EMEX)",
+     "country": "MEX",
+     "region": "National",
+     "ownership": "Industry body",
+     "role": "Packer association",
+     "size": "Unknown",
+     "status": "To verify",
+     "source": null
+    },
+    {
+     "name": "Asociación Peruana de Productores y Exportadores de Mango (APEM)",
+     "country": "PER",
+     "region": "Piura",
+     "ownership": "Industry body",
+     "role": "Association",
+     "size": "Unknown",
+     "status": "To verify",
+     "source": null
+    }
+   ],
+   "crm": {
+    "id_prefix": "NH-MAN-",
+    "industry_label": "Agriculture / Mangoes"
+   }
+  }
+ },
+ "gap_default": {
+  "regions": "National agricultural statistics office",
+  "operators": "Certification and export registries",
+  "structure": "National agricultural census"
+ },
+ "seasons": [
+  {
+   "id": "2000",
+   "label": "2000",
+   "start": "2000-01-01",
+   "end": "2000-12-31"
+  },
+  {
+   "id": "2010",
+   "label": "2010",
+   "start": "2010-01-01",
+   "end": "2010-12-31"
+  },
+  {
+   "id": "2020",
+   "label": "2020",
+   "start": "2020-01-01",
+   "end": "2020-12-31"
+  },
+  {
+   "id": "2023",
+   "label": "2023",
+   "start": "2023-01-01",
+   "end": "2023-12-31"
+  },
+  {
+   "id": "2024",
+   "label": "2024",
+   "start": "2024-01-01",
+   "end": "2024-12-31"
+  }
+ ],
+ "measures": {
+  "production": {
+   "label": "Production",
+   "unit": "t",
+   "format": "mass",
+   "agg": "sum",
+   "caption": "Tonnes"
+  },
+  "area_harvested": {
+   "label": "Area harvested",
+   "short": "Area",
+   "unit": "ha",
+   "format": "area",
+   "agg": "sum",
+   "caption": "Hectares"
+  },
+  "yield": {
+   "label": "Yield",
+   "unit": "t/ha",
+   "format": "yield",
+   "agg": "ratio",
+   "numerator": "production",
+   "denominator": "area_harvested",
+   "caption": "Tonnes per hectare, production ÷ area"
+  },
+  "value": {
+   "label": "Production value",
+   "short": "Value",
+   "unit": "USD",
+   "format": "usd",
+   "agg": "sum",
+   "derived": true,
+   "caption": "US dollars, production × price"
+  },
+  "exports": {
+   "label": "Export volume",
+   "short": "Export vol.",
+   "unit": "t",
+   "format": "mass",
+   "agg": "sum",
+   "caption": "Tonnes"
+  },
+  "export_value": {
+   "label": "Export value",
+   "short": "Export value",
+   "unit": "USD",
+   "format": "usd",
+   "agg": "sum",
+   "caption": "US dollars, reported trade value"
+  },
+  "export_share": {
+   "label": "Export share",
+   "short": "Export %",
+   "unit": "%",
+   "format": "pct",
+   "agg": "ratio",
+   "numerator": "exports",
+   "denominator": "production",
+   "caption": "Share of production exported (export volume ÷ production)"
+  }
+ },
+ "price_series": {
+  "wb_banana_us": {
+   "label": "Bananas, US import (World Bank)",
+   "basis": "CIF US ports"
+  },
+  "wb_banana_eu": {
+   "label": "Bananas, EU import (World Bank)",
+   "basis": "CIF EU ports"
+  },
+  "mango_world_export": {
+   "label": "Mango, world average export price",
+   "basis": "FOB, all exporters"
+  }
+ },
+ "prices": [
+  {
+   "commodity": "banana",
+   "series": "wb_banana_us",
+   "season": "2020",
+   "value": 1217.2,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_us",
+   "season": "2021",
+   "value": 1210,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_us",
+   "season": "2022",
+   "value": 1490,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_us",
+   "season": "2023",
+   "value": 1599.8,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_us",
+   "season": "2024",
+   "value": 1235.8,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_us",
+   "season": "2025",
+   "value": 1100.4,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_eu",
+   "season": "2020",
+   "value": 900,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_eu",
+   "season": "2021",
+   "value": 920,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_eu",
+   "season": "2022",
+   "value": 940,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_eu",
+   "season": "2023",
+   "value": 1090,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_eu",
+   "season": "2024",
+   "value": 1070,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "banana",
+   "series": "wb_banana_eu",
+   "season": "2025",
+   "value": 1110,
+   "unit": "USD/t",
+   "source": "wb_pink"
+  },
+  {
+   "commodity": "mango",
+   "series": "mango_world_export",
+   "season": "2024",
+   "value": 1676,
+   "unit": "USD/t",
+   "source": "indexbox_mango"
+  },
+  {
+   "commodity": "mango",
+   "series": "mango_world_export",
+   "season": "2023",
+   "value": 1483,
+   "unit": "USD/t",
+   "source": "indexbox_mango",
+   "note": "Derived: 2024 price was up 13% on 2023"
+  }
+ ],
+ "fx": [
+  {
+   "pair": "USD per AUD",
+   "season": "2024",
+   "rate": 0.6482,
+   "source": "ato_fx",
+   "note": "Average for year to 30 Jun 2025"
+  }
+ ],
+ "sources": {
+  "faostat_2024": {
+   "name": "FAOSTAT 2024 release (via StatRanker)",
+   "short": "FAOSTAT 2024",
+   "url": "https://statranker.org/economy/banana-production-by-country-2026-official-faostat-2024-ranking/",
+   "method": "Official estimate",
+   "licence": "FAO open data, attribution",
+   "vintage": "2025 release"
+  },
+  "faostat_wpr": {
+   "name": "FAOSTAT 2024 area and yield (via World Population Review)",
+   "short": "FAOSTAT 2024",
+   "url": "https://worldpopulationreview.com/country-rankings/banana-production-by-country",
+   "method": "Official estimate, rounded in citing page",
+   "licence": "FAO open data, attribution",
+   "vintage": "2025 release"
+  },
+  "faostat_hist": {
+   "name": "FAOSTAT 2000, 2010, 2020 (via Atlasocio, extract of June 2022)",
+   "short": "FAOSTAT (2022 extract)",
+   "url": "https://atlasocio.com/classements/economie/agriculture/classement-etats-par-production-bananes-asie.php",
+   "method": "Official estimate",
+   "licence": "FAO open data, attribution",
+   "vintage": "2022 release; later FAO revisions not applied"
+  },
+  "fao_exports": {
+   "name": "FAO Banana Market Review 2024, as reported by Philstar",
+   "short": "FAO BMR 2024",
+   "url": "https://www.philstar.com/business/2025/07/22/2459670/philippines-barely-hangs-worlds-3rd-largest-banana-exporter",
+   "method": "Official estimate, rounded in citing page",
+   "licence": "FAO open data, attribution",
+   "vintage": "Preliminary"
+  },
+  "wikifarmer": {
+   "name": "Wikifarmer, Global Banana Market 2024-2025",
+   "short": "Wikifarmer",
+   "url": "https://wikifarmer.com/library/en/article/deep-dive-global-banana-market-2024-2025",
+   "method": "Secondary summary",
+   "licence": "Public web page",
+   "vintage": "Sep 2025"
+  },
+  "wb_pink": {
+   "name": "World Bank Commodity Price Data (Pink Sheet), June 2023 and June 2026",
+   "short": "World Bank Pink Sheet",
+   "url": "https://thedocs.worldbank.org/en/doc/74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/related/CMO-Pink-Sheet-June-2026.pdf",
+   "method": "Market price, annual average",
+   "licence": "CC BY 4.0",
+   "vintage": "Jun 2026"
+  },
+  "fao_pp": {
+   "name": "FAO producer prices (via NationMaster ranking)",
+   "short": "FAO producer prices",
+   "url": "https://d3fqfiq2w1ez7u.cloudfront.net/nmx/ranking/bananas-producer-price",
+   "method": "Official, latest year per country (2014-18)",
+   "licence": "FAO open data, attribution",
+   "vintage": "Stale: 2014-2018"
+  },
+  "abgc": {
+   "name": "Australian Banana Growers' Council, Our Industry",
+   "short": "ABGC",
+   "url": "https://abgc.org.au/our-industry/",
+   "method": "Industry body",
+   "licence": "Public web page",
+   "vintage": "2024/25"
+  },
+  "ato_fx": {
+   "name": "ATO foreign exchange rates, 2025 financial year",
+   "short": "ATO FX",
+   "url": "https://www.ato.gov.au/tax-rates-and-codes/foreign-exchange-rates-annual-2025-financial-year",
+   "method": "Official average rate",
+   "licence": "Public",
+   "vintage": "FY2025"
+  },
+  "ceic_nhb": {
+   "name": "CEIC, Production of Horticulture Crops in Major States (Govt of India)",
+   "short": "Govt of India via CEIC",
+   "url": "https://ceicdata.com/en/india/production-of-horticulture-crops-in-major-states-fruits-banana",
+   "method": "Official estimate",
+   "licence": "Check before redistribution",
+   "vintage": "2024"
+  },
+  "promusa_ph": {
+   "name": "ProMusa, Philippines (PSA 2018 data)",
+   "short": "ProMusa / PSA",
+   "url": "https://promusa.org/Philippines",
+   "method": "Secondary summary of official data",
+   "licence": "Public web page",
+   "vintage": "2018"
+  },
+  "promusa_ec": {
+   "name": "ProMusa, Ecuador (MAG 2009, FAOSTAT 2013)",
+   "short": "ProMusa / MAG",
+   "url": "https://promusa.org/Ecuador",
+   "method": "Secondary summary, dated",
+   "licence": "Public web page",
+   "vintage": "2009-13"
+  },
+  "aebe": {
+   "name": "AEBE via FreshPlaza, Ecuador exports 2024",
+   "short": "AEBE",
+   "url": "https://www.freshplaza.com/north-america/article/9700852/ecuadorian-banana-exports-increased-by-1-42-in-2024/",
+   "method": "Industry body",
+   "licence": "News report",
+   "vintage": "2024"
+  },
+  "trendeconomy": {
+   "name": "TrendEconomy, HS 0803 world exports (UN Comtrade)",
+   "short": "UN Comtrade via TrendEconomy",
+   "url": "https://trendeconomy.com/data/commodity_h2/0803",
+   "method": "Official trade statistics",
+   "licence": "Comtrade terms",
+   "vintage": "2023"
+  },
+  "jll": {
+   "name": "JLL, Mackay Farming Group sale release (Aug 2023)",
+   "short": "JLL",
+   "url": "https://www.jll.com/en-au/newsroom/australia-largest-banana-producer-for-sale",
+   "method": "Company disclosure",
+   "licence": "Public web page",
+   "vintage": "2023"
+  },
+  "wpr_mango": {
+   "name": "FAOSTAT 2023 mango production, area and yield (via World Population Review)",
+   "short": "FAOSTAT 2023",
+   "url": "https://worldpopulationreview.com/country-rankings/mango-production-by-country",
+   "method": "Official estimate, rounded in citing page",
+   "licence": "FAO open data, attribution",
+   "vintage": "2024 release"
+  },
+  "indexbox_mango": {
+   "name": "IndexBox, Mango and Mangosteen World Market Overview 2024 (Jan 2026)",
+   "short": "IndexBox 2024",
+   "url": "https://www.indexbox.io/blog/mango-and-mangosteen-world-market-overview-2024-7/",
+   "method": "Commercial estimate from UN Comtrade / FAO",
+   "licence": "Public summary; full data licensed",
+   "vintage": "Jan 2026"
+  },
+  "fao_tropical_2023": {
+   "name": "FAO Major Tropical Fruits Market Review 2023 (prelim.)",
+   "short": "FAO MTF 2023",
+   "url": "https://agfstorage.blob.core.windows.net/misc/FP_com/2024/08/20/Ado.pdf",
+   "method": "Official estimate, approximate",
+   "licence": "FAO open data, attribution",
+   "vintage": "Preliminary, Aug 2024"
+  },
+  "ceic_mango": {
+   "name": "CEIC, Production of Horticulture Crops in Major States: Mango (Govt of India)",
+   "short": "Govt of India via CEIC",
+   "url": "https://ceicdata.com/en/india/production-of-horticulture-crops-in-major-states-fruits-mango",
+   "method": "Official estimate",
+   "licence": "Check before redistribution",
+   "vintage": "2024"
+  },
+  "hort_mango": {
+   "name": "Hort Innovation, Australian Horticulture Statistics Handbook 2020/21: Mango",
+   "short": "Hort Innovation",
+   "url": "https://www.industry.mangoes.net.au/cmsb/uploads/hort-innovation-ahsh-20-21-fruit-mango.pdf",
+   "method": "Industry statistics",
+   "licence": "Public",
+   "vintage": "2020/21"
+  },
+  "arrn_nt": {
+   "name": "FreshPlaza / ARRN, NT mango output 2025-26",
+   "short": "FreshPlaza / ARRN",
+   "url": "https://www.freshplaza.com/oceania/article/9807702/australia-s-northern-territory-mango-output-rises-7-5-in-2025-26/",
+   "method": "News report of NT Government figures",
+   "licence": "News report",
+   "vintage": "Feb 2026"
+  }
+ },
+ "geo": [
+  {
+   "id": "IND",
+   "m49": "356",
+   "name": "India",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "SAARC"
+   ]
+  },
+  {
+   "id": "CHN",
+   "m49": "156",
+   "name": "China",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "RCEP",
+    "APEC"
+   ]
+  },
+  {
+   "id": "IDN",
+   "m49": "360",
+   "name": "Indonesia",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "ASEAN",
+    "RCEP",
+    "APEC"
+   ]
+  },
+  {
+   "id": "ECU",
+   "m49": "218",
+   "name": "Ecuador",
+   "level": "country",
+   "continent": "South America",
+   "zones": [
+    "Andean Community"
+   ]
+  },
+  {
+   "id": "BRA",
+   "m49": "076",
+   "name": "Brazil",
+   "level": "country",
+   "continent": "South America",
+   "zones": [
+    "Mercosur"
+   ]
+  },
+  {
+   "id": "NGA",
+   "m49": "566",
+   "name": "Nigeria",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "ECOWAS",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "PHL",
+   "m49": "608",
+   "name": "Philippines",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "ASEAN",
+    "RCEP",
+    "APEC"
+   ]
+  },
+  {
+   "id": "AGO",
+   "m49": "024",
+   "name": "Angola",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "SADC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "TZA",
+   "m49": "834",
+   "name": "Tanzania",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "EAC",
+    "SADC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "GTM",
+   "m49": "320",
+   "name": "Guatemala",
+   "level": "country",
+   "continent": "North & Central America",
+   "zones": [
+    "SICA",
+    "CAFTA-DR"
+   ]
+  },
+  {
+   "id": "MEX",
+   "m49": "484",
+   "name": "Mexico",
+   "level": "country",
+   "continent": "North & Central America",
+   "zones": [
+    "USMCA",
+    "APEC"
+   ]
+  },
+  {
+   "id": "VNM",
+   "m49": "704",
+   "name": "Vietnam",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "ASEAN",
+    "RCEP",
+    "APEC"
+   ]
+  },
+  {
+   "id": "COL",
+   "m49": "170",
+   "name": "Colombia",
+   "level": "country",
+   "continent": "South America",
+   "zones": [
+    "Andean Community"
+   ]
+  },
+  {
+   "id": "CRI",
+   "m49": "188",
+   "name": "Costa Rica",
+   "level": "country",
+   "continent": "North & Central America",
+   "zones": [
+    "SICA",
+    "CAFTA-DR"
+   ]
+  },
+  {
+   "id": "RWA",
+   "m49": "646",
+   "name": "Rwanda",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "EAC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "PER",
+   "m49": "604",
+   "name": "Peru",
+   "level": "country",
+   "continent": "South America",
+   "zones": [
+    "Andean Community",
+    "APEC"
+   ]
+  },
+  {
+   "id": "KEN",
+   "m49": "404",
+   "name": "Kenya",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "EAC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "DOM",
+   "m49": "214",
+   "name": "Dominican Republic",
+   "level": "country",
+   "continent": "North & Central America",
+   "zones": [
+    "CAFTA-DR"
+   ]
+  },
+  {
+   "id": "THA",
+   "m49": "764",
+   "name": "Thailand",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "ASEAN",
+    "RCEP",
+    "APEC"
+   ]
+  },
+  {
+   "id": "PNG",
+   "m49": "598",
+   "name": "Papua New Guinea",
+   "level": "country",
+   "continent": "Oceania",
+   "zones": [
+    "APEC"
+   ]
+  },
+  {
+   "id": "EGY",
+   "m49": "818",
+   "name": "Egypt",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "COMESA",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "BDI",
+   "m49": "108",
+   "name": "Burundi",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "EAC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "ETH",
+   "m49": "231",
+   "name": "Ethiopia",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "COMESA",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "MWI",
+   "m49": "454",
+   "name": "Malawi",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "SADC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "SDN",
+   "m49": "729",
+   "name": "Sudan",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "COMESA"
+   ]
+  },
+  {
+   "id": "TUR",
+   "m49": "792",
+   "name": "Turkey",
+   "level": "country",
+   "continent": "Asia",
+   "zones": []
+  },
+  {
+   "id": "BGD",
+   "m49": "050",
+   "name": "Bangladesh",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "SAARC"
+   ]
+  },
+  {
+   "id": "COD",
+   "m49": "180",
+   "name": "DR Congo",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "SADC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "CMR",
+   "m49": "120",
+   "name": "Cameroon",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "CEMAC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "LAO",
+   "m49": "418",
+   "name": "Laos",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "ASEAN",
+    "RCEP"
+   ]
+  },
+  {
+   "id": "MLI",
+   "m49": "466",
+   "name": "Mali",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "ECOWAS",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "HND",
+   "m49": "340",
+   "name": "Honduras",
+   "level": "country",
+   "continent": "North & Central America",
+   "zones": [
+    "SICA",
+    "CAFTA-DR"
+   ]
+  },
+  {
+   "id": "CIV",
+   "m49": "384",
+   "name": "Côte d'Ivoire",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "ECOWAS",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "VEN",
+   "m49": "862",
+   "name": "Venezuela",
+   "level": "country",
+   "continent": "South America",
+   "zones": []
+  },
+  {
+   "id": "ZAF",
+   "m49": "710",
+   "name": "South Africa",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "SADC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "ESP",
+   "m49": "724",
+   "name": "Spain",
+   "level": "country",
+   "continent": "Europe",
+   "zones": [
+    "EU"
+   ]
+  },
+  {
+   "id": "MDG",
+   "m49": "450",
+   "name": "Madagascar",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "SADC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "MOZ",
+   "m49": "508",
+   "name": "Mozambique",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "SADC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "PAN",
+   "m49": "591",
+   "name": "Panama",
+   "level": "country",
+   "continent": "North & Central America",
+   "zones": [
+    "SICA"
+   ]
+  },
+  {
+   "id": "NPL",
+   "m49": "524",
+   "name": "Nepal",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "SAARC"
+   ]
+  },
+  {
+   "id": "AUS",
+   "m49": "036",
+   "name": "Australia",
+   "level": "country",
+   "continent": "Oceania",
+   "zones": [
+    "APEC",
+    "RCEP"
+   ]
+  },
+  {
+   "id": "IND-00",
+   "name": "Maharashtra",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-01",
+   "name": "Andhra Pradesh",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-02",
+   "name": "Tamil Nadu",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-03",
+   "name": "Uttar Pradesh",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-04",
+   "name": "Gujarat",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-05",
+   "name": "Karnataka",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-06",
+   "name": "Madhya Pradesh",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-07",
+   "name": "Bihar",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-08",
+   "name": "West Bengal",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-09",
+   "name": "Assam",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-10",
+   "name": "Kerala",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-11",
+   "name": "Chhattisgarh",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-12",
+   "name": "Odisha",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "AUS-FNQ",
+   "name": "Far North Queensland",
+   "level": "region",
+   "parent": "AUS",
+   "region_type": "Growing region"
+  },
+  {
+   "id": "AUS-NSW",
+   "name": "Mid North & Northern NSW",
+   "level": "region",
+   "parent": "AUS",
+   "region_type": "Growing region"
+  },
+  {
+   "id": "AUS-WAC",
+   "name": "Carnarvon, WA",
+   "level": "region",
+   "parent": "AUS",
+   "region_type": "Growing region"
+  },
+  {
+   "id": "PAK",
+   "m49": "586",
+   "name": "Pakistan",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "SAARC"
+   ]
+  },
+  {
+   "id": "CUB",
+   "m49": "192",
+   "name": "Cuba",
+   "level": "country",
+   "continent": "North & Central America",
+   "zones": []
+  },
+  {
+   "id": "YEM",
+   "m49": "887",
+   "name": "Yemen",
+   "level": "country",
+   "continent": "Asia",
+   "zones": []
+  },
+  {
+   "id": "HTI",
+   "m49": "332",
+   "name": "Haiti",
+   "level": "country",
+   "continent": "North & Central America",
+   "zones": []
+  },
+  {
+   "id": "GIN",
+   "m49": "324",
+   "name": "Guinea",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "ECOWAS",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "LKA",
+   "m49": "144",
+   "name": "Sri Lanka",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "SAARC"
+   ]
+  },
+  {
+   "id": "NER",
+   "m49": "562",
+   "name": "Niger",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "ECOWAS",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "ZWE",
+   "m49": "716",
+   "name": "Zimbabwe",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "SADC",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "SEN",
+   "m49": "686",
+   "name": "Senegal",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "ECOWAS",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "GHA",
+   "m49": "288",
+   "name": "Ghana",
+   "level": "country",
+   "continent": "Africa",
+   "zones": [
+    "ECOWAS",
+    "AfCFTA"
+   ]
+  },
+  {
+   "id": "SAU",
+   "m49": "682",
+   "name": "Saudi Arabia",
+   "level": "country",
+   "continent": "Asia",
+   "zones": [
+    "GCC"
+   ]
+  },
+  {
+   "id": "IND-M00",
+   "name": "Uttar Pradesh",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M01",
+   "name": "Andhra Pradesh",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M02",
+   "name": "Bihar",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M03",
+   "name": "Karnataka",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M04",
+   "name": "Telangana",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M05",
+   "name": "Gujarat",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M06",
+   "name": "West Bengal",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M07",
+   "name": "Madhya Pradesh",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M08",
+   "name": "Tamil Nadu",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M09",
+   "name": "Odisha",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M10",
+   "name": "Jharkhand",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "IND-M11",
+   "name": "Maharashtra",
+   "level": "region",
+   "parent": "IND",
+   "region_type": "State"
+  },
+  {
+   "id": "AUS-NT",
+   "name": "Northern Territory",
+   "level": "region",
+   "parent": "AUS",
+   "region_type": "State"
+  },
+  {
+   "id": "AUS-QLD",
+   "name": "Queensland",
+   "level": "region",
+   "parent": "AUS",
+   "region_type": "State"
+  },
+  {
+   "id": "AUS-WA",
+   "name": "Western Australia",
+   "level": "region",
+   "parent": "AUS",
+   "region_type": "State"
+  },
+  {
+   "id": "AUS-NSWm",
+   "name": "New South Wales",
+   "level": "region",
+   "parent": "AUS",
+   "region_type": "State"
+  }
+ ],
+ "observations": [
+  {
+   "geo": "IND",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 37614362,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 948500.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "IND",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 14137300,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "IND",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 29780000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "IND",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 31504000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 11759700,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 310100.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 4941500,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 9560500,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 11513000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "IDN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 9260387,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "IDN",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 152700.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "IDN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 3746962,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "IDN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 5755073,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "IDN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 8182756,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 7585653,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 181100.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 5453220,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 7931060,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 6023390,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 7046345,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 470000.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 5663360,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 6969306,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 6637308,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "NGA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 6907142,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "NGA",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 468400.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 5641130,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 186300.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 4929570,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 9101341,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 5955311,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "AGO",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 5213106,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "AGO",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 190700.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "AGO",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 300000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "AGO",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 2047955,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "AGO",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 4115028,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "TZA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 3269970,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "TZA",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 316300.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "TZA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 700900,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "TZA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 3155710,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "TZA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 3419436,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "GTM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2843487,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "GTM",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 57200.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "GTM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 955000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "GTM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 2560574,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "GTM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 4476680,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2670291,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 86500.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 1863252,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 2103361,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 2464171,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "VNM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2640250,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "VNM",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 144600.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "VNM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 1124800,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "VNM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 1618231,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "VNM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 2191379,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "COL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2638064,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "COL",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 105600.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "COL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 1593628,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "COL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 2019625,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "COL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 2434900,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CRI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2630020,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "CRI",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 45900.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "CRI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 2181000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CRI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 2019826,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CRI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 2528721,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "RWA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2437236,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "RWA",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 202500.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "RWA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 2212250,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "RWA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 2000000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "RWA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 1118841,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PER",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2343311,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "PER",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 175700.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "PER",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 2007284,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PER",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 2314514,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "KEN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2061285,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "KEN",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 75900.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "KEN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 1027768,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "KEN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 1583143,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "KEN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 1856659,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "DOM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2038905,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "DOM",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 56000.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "DOM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 422322,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "DOM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 892753,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "DOM",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 1232039,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "THA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 1298998,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "THA",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 57400.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "THA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 2209697,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "THA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 1584898,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "THA",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 1360670,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PNG",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 1272779,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "PNG",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 76400.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "PNG",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 810000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PNG",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 1050000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PNG",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 1261605,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 1251943,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 28700.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 760505,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 1028946,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 1382950,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BDI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 1207926,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "BDI",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 165200.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "BDI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 1513997,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BDI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 1912661,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BDI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 1280048,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ETH",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 1190101,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "ETH",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 90900.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "ETH",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 100000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ETH",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 270572,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ETH",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 898355,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MWI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 1131259,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "MWI",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 58500.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "MWI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 310000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MWI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 394056,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MWI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 406343,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "SDN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 952279,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "SDN",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 53700.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "SDN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 165000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "SDN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 684000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "SDN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 923938,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "TUR",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 875000,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "TUR",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 12900.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "TUR",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 64000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "TUR",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 210718,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "TUR",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 728133,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BGD",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 813560,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "BGD",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 49700.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "BGD",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 572000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BGD",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 818254,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BGD",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 817908,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "COD",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 811021,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "COD",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 215900.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "COD",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 312000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "COD",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 316472,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "COD",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 821613,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CMR",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 805353,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "CMR",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 62000.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "CMR",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 626330,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CMR",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 1333851,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CMR",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 1209750,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "LAO",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 766200,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "LAO",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 27600.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "LAO",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 37000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "LAO",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 178600,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "LAO",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 706075,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MLI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 629820,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "MLI",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 43300.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "MLI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 70000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MLI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 172182,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MLI",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 200487,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "HND",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 550869,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "HND",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 14100.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "HND",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 469000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "HND",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 856270,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "HND",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 585929,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CIV",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 534243,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "CIV",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 12100.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "CIV",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 305300,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CIV",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 314270,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CIV",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 625981,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "VEN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 533896,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "VEN",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 35300.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "VEN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 763635,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "VEN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 375118,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "VEN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 884207,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ZAF",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 430925,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "ZAF",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 6800.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "ZAF",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 377967,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ZAF",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 399898,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ZAF",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 402025,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ESP",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 421320,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "ESP",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 8800.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "ESP",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 396973,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ESP",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 396589,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ESP",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 420140,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MDG",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 399940,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "MDG",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 72400.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "MDG",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 290000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MDG",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 339885,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MDG",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 374372,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MOZ",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 387740,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "MOZ",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 68800.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "MOZ",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 90000,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MOZ",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 320640,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MOZ",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 774514,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PAN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 387690,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "PAN",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 7000.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "PAN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 660398,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PAN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 338280,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PAN",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 285188,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "NPL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 383285,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "NPL",
+   "commodity": "banana",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 23400.0,
+   "source": "faostat_wpr",
+   "confidence": "medium",
+   "note": "Rounded to 0.1k ha in citing page"
+  },
+  {
+   "geo": "NPL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 44800,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "NPL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 91042,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "NPL",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 254161,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 368735,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2000",
+   "value": 256867,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2010",
+   "value": 302173,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2020",
+   "value": 372433,
+   "source": "faostat_hist",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "banana",
+   "measure": "exports",
+   "season": "2024",
+   "value": 6000000.0,
+   "source": "fao_exports",
+   "confidence": "medium",
+   "note": "Rounded to 0.1 Mt in citing page"
+  },
+  {
+   "geo": "CRI",
+   "commodity": "banana",
+   "measure": "exports",
+   "season": "2024",
+   "value": 2400000.0,
+   "source": "fao_exports",
+   "confidence": "medium",
+   "note": "Rounded to 0.1 Mt in citing page"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "banana",
+   "measure": "exports",
+   "season": "2024",
+   "value": 2300000.0,
+   "source": "fao_exports",
+   "confidence": "medium",
+   "note": "Rounded to 0.1 Mt in citing page"
+  },
+  {
+   "geo": "GTM",
+   "commodity": "banana",
+   "measure": "exports",
+   "season": "2024",
+   "value": 2200000.0,
+   "source": "fao_exports",
+   "confidence": "medium",
+   "note": "Rounded to 0.1 Mt in citing page"
+  },
+  {
+   "geo": "COL",
+   "commodity": "banana",
+   "measure": "exports",
+   "season": "2024",
+   "value": 2200000.0,
+   "source": "fao_exports",
+   "confidence": "medium",
+   "note": "Rounded to 0.1 Mt in citing page"
+  },
+  {
+   "geo": "WLD",
+   "commodity": "banana",
+   "measure": "exports",
+   "season": "2024",
+   "value": 19700000.0,
+   "source": "wikifarmer",
+   "confidence": "medium"
+  },
+  {
+   "geo": "WLD",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 139413685,
+   "source": "faostat_2024",
+   "confidence": "high"
+  },
+  {
+   "geo": "WLD",
+   "commodity": "banana",
+   "measure": "traded_share",
+   "season": "2024",
+   "value": 0.14,
+   "source": "wikifarmer",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "banana",
+   "measure": "exports_boxes",
+   "season": "2024",
+   "value": 346160000.0,
+   "source": "aebe",
+   "confidence": "high"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "banana",
+   "measure": "export_value",
+   "season": "2023",
+   "value": 3789456985,
+   "source": "trendeconomy",
+   "confidence": "high"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "banana",
+   "measure": "export_value",
+   "season": "2023",
+   "value": 1220477664,
+   "source": "trendeconomy",
+   "confidence": "high"
+  },
+  {
+   "geo": "CRI",
+   "commodity": "banana",
+   "measure": "export_value",
+   "season": "2023",
+   "value": 1189143623,
+   "source": "trendeconomy",
+   "confidence": "high"
+  },
+  {
+   "geo": "GTM",
+   "commodity": "banana",
+   "measure": "export_value",
+   "season": "2023",
+   "value": 1124216104,
+   "source": "trendeconomy",
+   "confidence": "high"
+  },
+  {
+   "geo": "WLD",
+   "commodity": "banana",
+   "measure": "export_value",
+   "season": "2023",
+   "value": 12700000000.0,
+   "source": "trendeconomy",
+   "confidence": "medium",
+   "note": "Reported as exceeding USD 12.7B"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "banana",
+   "measure": "farms",
+   "season": "2024",
+   "value": 500,
+   "source": "abgc",
+   "confidence": "medium",
+   "note": "Approximate; most family-run"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "banana",
+   "measure": "reported_value_local",
+   "season": "2024",
+   "value": 719400000.0,
+   "source": "abgc",
+   "confidence": "high",
+   "note": "AUD, farm-gate value of production 2024/25"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2017",
+   "value": 247.1,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2017"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2016",
+   "value": 289.4,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2016"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2015",
+   "value": 521.1,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2015"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2016",
+   "value": 630.1,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2016"
+  },
+  {
+   "geo": "COL",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2015",
+   "value": 498.6,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2015"
+  },
+  {
+   "geo": "CRI",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2018",
+   "value": 453.0,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2018"
+  },
+  {
+   "geo": "VNM",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2018",
+   "value": 322.3,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2018"
+  },
+  {
+   "geo": "THA",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2018",
+   "value": 300.2,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2018"
+  },
+  {
+   "geo": "TZA",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2016",
+   "value": 396.3,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2016"
+  },
+  {
+   "geo": "KEN",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2016",
+   "value": 390.0,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2016"
+  },
+  {
+   "geo": "AGO",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2014",
+   "value": 308.8,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2014"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2015",
+   "value": 178.0,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2015"
+  },
+  {
+   "geo": "DOM",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2018",
+   "value": 109.6,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2018"
+  },
+  {
+   "geo": "PAN",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2017",
+   "value": 116.7,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2017"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2017",
+   "value": 286.3,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2017"
+  },
+  {
+   "geo": "ETH",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2018",
+   "value": 180.1,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2018"
+  },
+  {
+   "geo": "RWA",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2015",
+   "value": 710.3,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2015"
+  },
+  {
+   "geo": "BDI",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2014",
+   "value": 259.9,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2014"
+  },
+  {
+   "geo": "MWI",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2017",
+   "value": 538.1,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2017"
+  },
+  {
+   "geo": "TUR",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2018",
+   "value": 612.3,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2018"
+  },
+  {
+   "geo": "BGD",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2014",
+   "value": 320.7,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2014"
+  },
+  {
+   "geo": "MLI",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2015",
+   "value": 775.8,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2015"
+  },
+  {
+   "geo": "ZAF",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2018",
+   "value": 454.4,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2018"
+  },
+  {
+   "geo": "ESP",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2018",
+   "value": 694.3,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2018"
+  },
+  {
+   "geo": "NPL",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2018",
+   "value": 427.0,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2018"
+  },
+  {
+   "geo": "VEN",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2014",
+   "value": 1220.0,
+   "source": "fao_pp",
+   "confidence": "low",
+   "note": "Price year 2014"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "banana",
+   "measure": "producer_price",
+   "season": "2024",
+   "value": 1263.7,
+   "source": "abgc",
+   "confidence": "medium",
+   "note": "Derived: ABGC AUD 719.4m / 369 kt, at ATO FY2025 average 0.6482 USD/AUD"
+  },
+  {
+   "geo": "IND-00",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 6525870,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-01",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 5830935,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-02",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 4684533,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-03",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 4191846,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-04",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 3992204,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-05",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 3121968,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-06",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 2355461,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-07",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 1619059,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-08",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 1436627,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-09",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 997023,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-10",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 892990,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-11",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 586647,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-12",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 508650,
+   "source": "ceic_nhb",
+   "confidence": "high"
+  },
+  {
+   "geo": "AUS-FNQ",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 346611,
+   "source": "abgc",
+   "confidence": "medium",
+   "note": "Derived: ABGC share 94% x FAOSTAT national total"
+  },
+  {
+   "geo": "AUS-NSW",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 14749,
+   "source": "abgc",
+   "confidence": "medium",
+   "note": "Derived: ABGC share 4% x FAOSTAT national total"
+  },
+  {
+   "geo": "AUS-WAC",
+   "commodity": "banana",
+   "measure": "production",
+   "season": "2024",
+   "value": 7375,
+   "source": "abgc",
+   "confidence": "medium",
+   "note": "Derived: ABGC share 2% x FAOSTAT national total"
+  },
+  {
+   "geo": "IND",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 26200000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "IND",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 2698000,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "IDN",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 4100000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "IDN",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 298827,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 3900000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 390712,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 2700000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 236374,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "PAK",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 2600000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "PAK",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 213496,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 2300000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 102952,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "MWI",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 2100000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "MWI",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 60099,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 1700000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 161928,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "THA",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 1600000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "THA",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 131714,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "BGD",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 1500000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "BGD",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 142373,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "VNM",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 1500000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "VNM",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 123157,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "NGA",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 954200.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "NGA",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 131033,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "KEN",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 909900.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "KEN",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 76790,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 799200.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "PHL",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 199710,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "SDN",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 726200.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "SDN",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 35238,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "MLI",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 676500.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "MLI",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 47313,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "NPL",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 538500.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "NPL",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 45114,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "COL",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 535400.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "COL",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 49397,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "TZA",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 459700.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "TZA",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 33843,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "CUB",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 446300.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "CUB",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 37399,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "PER",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 392700.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "PER",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 33800,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "YEM",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 378000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "YEM",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 25293,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "COD",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 309700.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "COD",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 18166,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "MDG",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 307200.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "MDG",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 49999,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "AGO",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 288600.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "AGO",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 25717,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "HTI",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 223100.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "HTI",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 29124,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "CIV",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 207700.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "CIV",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 347299,
+   "source": "wpr_mango",
+   "confidence": "low",
+   "note": "Yield of 0.6 t/ha looks like an area-reporting error in source"
+  },
+  {
+   "geo": "GIN",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 206200.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "GIN",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 102538,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "LKA",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 194100.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "LKA",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 29453,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "GTM",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 185800.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "GTM",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 14139,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "NER",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 167200.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "NER",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 41407,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "ETH",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 144000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "ETH",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 31756,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "ZWE",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 141200.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "ZWE",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 4964,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "VEN",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 122400.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "VEN",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 9128,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "SEN",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 122400.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "SEN",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 18132,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "GHA",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 103100.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "GHA",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 7070,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "SAU",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 95000.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "SAU",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 7265,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "DOM",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 92300.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "DOM",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 5873,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "ZAF",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 92200.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "ZAF",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 4992,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2023",
+   "value": 74900.0,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2023",
+   "value": 18302,
+   "source": "wpr_mango",
+   "confidence": "medium",
+   "note": "Rounded in citing page"
+  },
+  {
+   "geo": "IND",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 26000000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Rounded in source"
+  },
+  {
+   "geo": "IDN",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 4100000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Rounded in source"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 3800000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Rounded in source"
+  },
+  {
+   "geo": "WLD",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 61000000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Mangoes, mangosteens and guavas"
+  },
+  {
+   "geo": "WLD",
+   "commodity": "mango",
+   "measure": "area_harvested",
+   "season": "2024",
+   "value": 6100000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 442000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "THA",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 418000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Mainly mangosteen"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 259000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "PER",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 211200,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Derived: 9.6% of 2.2 Mt"
+  },
+  {
+   "geo": "PAK",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 134200,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Derived: 6.1% of 2.2 Mt"
+  },
+  {
+   "geo": "IND",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 105600,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Derived: 4.8% of 2.2 Mt"
+  },
+  {
+   "geo": "CHN",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 75000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 63000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 60000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "CIV",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 52000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "WLD",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2024",
+   "value": 2200000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "THA",
+   "commodity": "mango",
+   "measure": "export_value",
+   "season": "2024",
+   "value": 689000000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "mango",
+   "measure": "export_value",
+   "season": "2024",
+   "value": 650000000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "mango",
+   "measure": "export_value",
+   "season": "2024",
+   "value": 351000000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "EGY",
+   "commodity": "mango",
+   "measure": "export_value",
+   "season": "2024",
+   "value": 158880000,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Derived: 60 kt at USD 2,648/t"
+  },
+  {
+   "geo": "CIV",
+   "commodity": "mango",
+   "measure": "export_value",
+   "season": "2024",
+   "value": 28964000,
+   "source": "indexbox_mango",
+   "confidence": "medium",
+   "note": "Derived: 52 kt at USD 557/t"
+  },
+  {
+   "geo": "WLD",
+   "commodity": "mango",
+   "measure": "export_value",
+   "season": "2024",
+   "value": 3700000000.0,
+   "source": "indexbox_mango",
+   "confidence": "medium"
+  },
+  {
+   "geo": "MEX",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2023",
+   "value": 480000.0,
+   "source": "fao_tropical_2023",
+   "confidence": "low",
+   "note": "Approximate"
+  },
+  {
+   "geo": "THA",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2023",
+   "value": 370000.0,
+   "source": "fao_tropical_2023",
+   "confidence": "low",
+   "note": "Approximate"
+  },
+  {
+   "geo": "BRA",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2023",
+   "value": 270000.0,
+   "source": "fao_tropical_2023",
+   "confidence": "low",
+   "note": "Approximate"
+  },
+  {
+   "geo": "PER",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2023",
+   "value": 200000.0,
+   "source": "fao_tropical_2023",
+   "confidence": "low",
+   "note": "Approximate"
+  },
+  {
+   "geo": "PAK",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2023",
+   "value": 130000.0,
+   "source": "fao_tropical_2023",
+   "confidence": "low",
+   "note": "Approximate"
+  },
+  {
+   "geo": "IND",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2023",
+   "value": 110000.0,
+   "source": "fao_tropical_2023",
+   "confidence": "low",
+   "note": "Approximate"
+  },
+  {
+   "geo": "ECU",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2023",
+   "value": 27000.0,
+   "source": "fao_tropical_2023",
+   "confidence": "low",
+   "note": "Approximate"
+  },
+  {
+   "geo": "WLD",
+   "commodity": "mango",
+   "measure": "exports",
+   "season": "2023",
+   "value": 2400000.0,
+   "source": "fao_tropical_2023",
+   "confidence": "medium",
+   "note": "Mango, mangosteen and guava cluster"
+  },
+  {
+   "geo": "IND-M00",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 5807185,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M01",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 4985275,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M02",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 1584311,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M03",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 1549988,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M04",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 1114112,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M05",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 1089155,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M06",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 1012278,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M07",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 946943,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M08",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 916745,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M09",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 888320,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M10",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 527965,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "IND-M11",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2024",
+   "value": 522177,
+   "source": "ceic_mango",
+   "confidence": "high"
+  },
+  {
+   "geo": "AUS",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2020",
+   "value": 51528,
+   "source": "hort_mango",
+   "confidence": "high",
+   "note": "Year to June 2021"
+  },
+  {
+   "geo": "AUS-NT",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2020",
+   "value": 27627,
+   "source": "hort_mango",
+   "confidence": "high",
+   "note": "Year to June 2021"
+  },
+  {
+   "geo": "AUS-QLD",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2020",
+   "value": 22415,
+   "source": "hort_mango",
+   "confidence": "high",
+   "note": "Year to June 2021"
+  },
+  {
+   "geo": "AUS-WA",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2020",
+   "value": 927,
+   "source": "hort_mango",
+   "confidence": "high",
+   "note": "Year to June 2021"
+  },
+  {
+   "geo": "AUS-NSWm",
+   "commodity": "mango",
+   "measure": "production",
+   "season": "2020",
+   "value": 559,
+   "source": "hort_mango",
+   "confidence": "high",
+   "note": "Year to June 2021"
+  }
+ ],
+ "config": {
+  "ranking_size": 10,
+  "coverage_top_n": 12,
+  "default_commodity": "banana",
+  "headline_measures": [
+   "production",
+   "value",
+   "exports",
+   "export_value"
+  ],
+  "ranking_measures": [
+   "production",
+   "value",
+   "exports",
+   "export_value",
+   "export_share"
+  ],
+  "agent": {
+   "name": "Market Analyst",
+   "analysis_prompt": "You are the Market Analyst agent inside NavHub Markets, writing for a business user looking for market opportunities. Using ONLY the data in the JSON below (the figures currently on their screen), write a short analysis. Format: one bold headline sentence, then three short sections with '### ' headings: 'Where the volume and value are', 'Export opportunity', 'How far to trust this'. Use '- ' bullets, at most 3 per section, under 230 words in total. Quote figures as they appear in the data, with their season. Say when a figure is filled from an earlier season, derived, or rounded. Never invent numbers, countries or sources that are not in the data.",
+   "chat_prompt": "You are the Market Analyst agent inside NavHub Markets. The user is looking at the market view described in the JSON below and will ask questions about it. Answer from that data and from the page tools if you have them; if the data cannot answer, say what is missing and which source would fill it. Be direct and brief (under 150 words unless asked for more), use '- ' bullets for lists, quote figures with their season, and never invent numbers. If the user asks to see a different commodity, season, scope or map measure, use the change_view tool when available.",
+   "suggestions": [
+    "Where is the biggest gap between production and exports?",
+    "Which exporters earn the most per tonne?",
+    "What would you check before trusting these numbers?",
+    "Compare Asia with South America"
+   ]
+  },
+  "zones_hidden": [],
+  "coverage_dimensions": [
+   {
+    "label": "Production",
+    "kind": "measure",
+    "measure": "production"
+   },
+   {
+    "label": "Seasons",
+    "kind": "seasons",
+    "measure": "production"
+   },
+   {
+    "label": "Area",
+    "kind": "measure",
+    "measure": "area_harvested"
+   },
+   {
+    "label": "Export vol.",
+    "kind": "measure",
+    "measure": "exports"
+   },
+   {
+    "label": "Export value",
+    "kind": "measure",
+    "measure": "export_value"
+   },
+   {
+    "label": "Local price",
+    "kind": "measure",
+    "measure": "producer_price"
+   },
+   {
+    "label": "Regions",
+    "kind": "regions"
+   },
+   {
+    "label": "Farm count",
+    "kind": "measure",
+    "measure": "farms"
+   },
+   {
+    "label": "Size",
+    "kind": "classification",
+    "classification": "area_size"
+   },
+   {
+    "label": "Turnover",
+    "kind": "classification",
+    "classification": "turnover"
+   },
+   {
+    "label": "Ownership",
+    "kind": "classification",
+    "classification": "ownership"
+   },
+   {
+    "label": "Operators",
+    "kind": "operators"
+   }
+  ],
+  "insights": [
+   {
+    "type": "top_share",
+    "template": "{name} grew {value} in {season}, {share} of {base}.",
+    "base_world": "world output",
+    "base_sample": "output by countries in this sample"
+   },
+   {
+    "type": "exporter_concentration",
+    "n": 4,
+    "template": "The top {n} exporters ({names}) shipped {value}, {share} of the {world} traded worldwide in {season}."
+   },
+   {
+    "type": "unit_value_range",
+    "template": "Export earnings per tonne ranged from {hi} for {hiName} to {lo} for {loName} in {season}."
+   },
+   {
+    "type": "lowest_orientation",
+    "template": "{name} exported only {share} of what it grew in {season}."
+   },
+   {
+    "type": "growth_leader",
+    "template": "Fastest growth among large producers from {from} to {to}: {name}, up {change}."
+   },
+   {
+    "type": "yield_range",
+    "template": "Yields ranged from {hi} in {hiName} to {lo} in {loName} in {season}."
+   },
+   {
+    "type": "farm_count_coverage",
+    "template": "Farm counts exist for {n} of {total} countries in this sample ({names})."
+   }
+  ]
+ },
+ "crm_export": {
+  "target": "HubSpot companies",
+  "columns": [
+   [
+    "external_id",
+    "id"
+   ],
+   [
+    "company_name",
+    "name"
+   ],
+   [
+    "country",
+    "countryName"
+   ],
+   [
+    "region",
+    "region"
+   ],
+   [
+    "ownership",
+    "ownership"
+   ],
+   [
+    "industry",
+    "industry"
+   ],
+   [
+    "role",
+    "role"
+   ],
+   [
+    "size_signal",
+    "size"
+   ],
+   [
+    "verification_status",
+    "status"
+   ],
+   [
+    "source_url",
+    "sourceUrl"
+   ]
+  ]
+ }
+}
