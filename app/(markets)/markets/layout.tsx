@@ -1,6 +1,6 @@
 import { redirect }       from 'next/navigation'
 import { createClient }    from '@/lib/supabase/server'
-import { getMarketsAccess, canViewMarkets, canManageMarkets } from '@/lib/markets'
+import { getMarketsAccess, canViewMarkets, canManageMarkets, getMarketsTheme } from '@/lib/markets'
 import MarketsShell        from '@/components/markets/MarketsShell'
 
 /**
@@ -21,10 +21,14 @@ export default async function MarketsLayout({
   const access = await getMarketsAccess(supabase, session.user.id)
   if (!canViewMarkets(access)) redirect('/?error=markets_access')
 
+  // Per-user Markets theme preference (MKT-2), persisted server-side.
+  const initialTheme = await getMarketsTheme(supabase, session.user.id)
+
   return (
     <MarketsShell
       userEmail={session.user.email ?? ''}
       canManage={canManageMarkets(access)}
+      initialTheme={initialTheme}
     >
       {children}
     </MarketsShell>

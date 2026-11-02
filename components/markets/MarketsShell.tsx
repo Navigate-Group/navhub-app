@@ -18,6 +18,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 
 type ThemeChoice = 'light' | 'dark' | 'system'
+type StoredTheme = 'light' | 'dark' | 'auto'
 
 const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string; Icon: React.ComponentType<{ className?: string }> }> = [
   { value: 'light',  label: 'Light', Icon: Sun },
@@ -25,24 +26,47 @@ const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string; Icon: React.Comp
   { value: 'system', label: 'Auto',  Icon: Monitor },
 ]
 
+// next-themes uses 'system' for device preference; the DB stores 'auto'.
+const toStored = (t: ThemeChoice): StoredTheme => (t === 'system' ? 'auto' : t)
+const toChoice = (t: StoredTheme): ThemeChoice => (t === 'auto' ? 'system' : t)
+
 /**
- * Markets shell (MKT-1): top bar + breadcrumbs. Intentionally free of Group /
- * Company context. The theme toggle writes to next-themes (persisted to
- * localStorage) — UI only, no data model yet.
+ * Markets shell (MKT-1 + MKT-2): top bar + breadcrumbs. Intentionally free of
+ * Group / Company context. The theme toggle drives next-themes AND persists
+ * the choice per-user (MKT-2) via PUT /api/markets/preferences, so it survives
+ * across sessions and devices. `initialTheme` is the server-stored value.
  */
 export default function MarketsShell({
   children,
   userEmail,
   canManage,
+  initialTheme = 'auto',
 }: {
   children: React.ReactNode
   userEmail: string
   canManage: boolean
+  initialTheme?: StoredTheme
 }) {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
+
+  useEffect(() => {
+    setMounted(true)
+    // Hydrate from the server-stored preference on first mount.
+    setTheme(toChoice(initialTheme))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persist a choice to the server (and apply it locally via next-themes).
+  const chooseTheme = (choice: ThemeChoice) => {
+    setTheme(choice)
+    void fetch('/api/markets/preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: toStored(choice) }),
+    }).catch(() => { /* non-blocking; localStorage still reflects the choice */ })
+  }
 
   const userInitials = (userEmail || '??').slice(0, 2).toUpperCase()
   const onManage = pathname.startsWith('/markets/manage')
@@ -108,7 +132,7 @@ export default function MarketsShell({
               {THEME_OPTIONS.map(({ value, label, Icon }) => (
                 <DropdownMenuItem
                   key={value}
-                  onSelect={() => setTheme(value)}
+                  onSelect={() => chooseTheme(value)}
                   className={cn('cursor-pointer', theme === value && 'font-medium text-foreground')}
                 >
                   <Icon className="mr-2 h-4 w-4" />

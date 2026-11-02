@@ -89,3 +89,56 @@ export async function listActiveMarketsRoles(): Promise<
     .is('revoked_at', null)
   return (data ?? []) as Array<{ user_id: string; role: MarketsRole; granted_at: string }>
 }
+
+// ── Per-user Markets theme preference (MKT-2) ───────────────────────────────
+// Stored on the existing user_settings row (column markets_theme, added in
+// migration 072). Options: 'light' | 'dark' | 'auto' (device preference);
+// default 'auto'. Persisted server-side so the choice survives sessions.
+
+/** The three Markets theme choices; 'auto' follows the device preference. */
+export type MarketsTheme = 'light' | 'dark' | 'auto'
+
+const MARKETS_THEMES: readonly MarketsTheme[] = ['light', 'dark', 'auto']
+
+/** Narrow an arbitrary value to a valid MarketsTheme, or null. */
+export function parseMarketsTheme(value: unknown): MarketsTheme | null {
+  return typeof value === 'string' && (MARKETS_THEMES as readonly string[]).includes(value)
+    ? (value as MarketsTheme)
+    : null
+}
+
+/**
+ * Read a user's stored Markets theme. Returns 'auto' when no row/column value
+ * exists yet. Pass the request-scoped Supabase client (RLS lets a user read
+ * their own user_settings row).
+ */
+export async function getMarketsTheme(
+  client: SupabaseClient,
+  userId: string,
+): Promise<MarketsTheme> {
+  const { data } = await client
+    .from('user_settings')
+    .select('markets_theme')
+    .eq('user_id', userId)
+    .maybeSingle()
+  return parseMarketsTheme((data as { markets_theme?: string } | null)?.markets_theme) ?? 'auto'
+}
+
+/**
+ * Persist a user's Markets theme, upserting their user_settings row. Returns
+ * the stored value. Pass the request-scoped client — RLS ("Users manage own
+ * settings") permits the upsert for the row owner.
+ */
+export async function setMarketsTheme(
+  client: SupabaseClient,
+  userId: string,
+  theme: MarketsTheme,
+): Promise<MarketsTheme> {
+  await client
+    .from('user_settings')
+    .upsert(
+      { user_id: userId, markets_theme: theme, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    )
+  return theme
+}
