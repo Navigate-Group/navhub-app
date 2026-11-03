@@ -673,6 +673,98 @@ export function buildExplorerView(params: ExplorerParams): ExplorerView {
   return { cards, map, rankings, about, mapMeasure }
 }
 
+// ── Full ranking (all countries, for the agent tools) ───────────────────────
+
+export interface FullRankingRow {
+  rank: number
+  iso3: string
+  name: string
+  value: number
+  /** fraction of the ranking's total (0–1) for level measures. */
+  share: number
+  filled: boolean
+  filledFrom?: string
+}
+
+export interface FullRanking {
+  measure: ExplorerMeasure
+  label: string
+  unit: string
+  format: string
+  /** EVERY producing country in scope that resolves a figure, ranked desc. */
+  rows: FullRankingRow[]
+  /** total across all ranked (present) countries — the share denominator. */
+  total: number
+  rankedCount: number
+  /** producing countries in scope with no value for this measure. */
+  missingCount: number
+  /** countries skipped because no price was available (value only). */
+  noPriceCount: number
+}
+
+/**
+ * Build the COMPLETE ranking of every producing country in scope for one
+ * measure — not the top-N slice `buildExplorerView` returns. Reuses the exact
+ * same strict multi-season resolution so the agent's numbers always match the
+ * UI's. Intended for the Market Analyst ranking tool (MKT-5).
+ */
+export function buildFullRanking(params: ExplorerParams, measure: ExplorerMeasure): FullRanking {
+  const { commodity, fillGaps, annualAverage } = params
+  const method = resolveMethod(commodity, params.valuationMethod)
+  const scope = resolveScope(params.scope)
+
+  const meta = getCommodityMeta(commodity)
+  const validSeasons = params.seasons.length
+    ? params.seasons.filter(s => meta?.seasons.includes(s))
+    : []
+  const seasons = validSeasons.length ? validSeasons : meta ? [meta.defaultSeason] : []
+
+  const mm = measureMeta(measure)
+  const isRatio = measure === 'export_share'
+  const rankingScopeCountries = rankingCountries(commodity, scope)
+
+  const resolved = rankingScopeCountries.map(c => ({
+    c,
+    cell: resolveMultiSeasonStrict(commodity, measure, seasons, c.id, method, fillGaps, annualAverage),
+  }))
+  const present = resolved.filter(r => r.cell.value != null)
+  const missingCount = resolved.length - present.length
+  const noPriceCount = resolved.filter(r => r.cell.value == null && r.cell.noPrice).length
+
+  const total = present.reduce((acc, r) => acc + (r.cell.value as number), 0)
+  const ranked = present
+    .slice()
+    .sort((a, b) => (b.cell.value as number) - (a.cell.value as number))
+  const barBase = isRatio
+    ? Math.max(...ranked.map(r => r.cell.value as number), 0)
+    : total
+
+  const rows: FullRankingRow[] = ranked.map((r, i) => {
+    const value = r.cell.value as number
+    return {
+      rank: i + 1,
+      iso3: r.c.id,
+      name: r.c.name,
+      value,
+      share: isRatio ? (barBase > 0 ? value / barBase : 0) : total > 0 ? value / total : 0,
+      filled: r.cell.filled,
+      filledFrom: r.cell.filledFrom,
+    }
+  })
+
+  return {
+    measure,
+    label: mm.label,
+    unit: mm.unit,
+    format: mm.format,
+    rows,
+    total,
+    rankedCount: present.length,
+    missingCount,
+    noPriceCount,
+  }
+}
+
 /** Human source label for a source id (used in notes), if present. */
 export function sourceLabel(id?: string): string | undefined {
   if (!id) return undefined
