@@ -15,6 +15,7 @@
  */
 
 import { createAdminClient } from '../supabase/admin'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 /** The kind of change recorded in the audit log. */
 export type MarketsAuditAction = 'insert' | 'update' | 'archive' | 'restore' | 'delete'
@@ -91,4 +92,31 @@ export async function logChange(
     throw new Error(`[markets] audit log insert failed: ${error.message}`)
   }
   return data as MarketsAuditEntry
+}
+
+/**
+ * Read the most recent reference-data changes from the audit log, newest first.
+ * Used by the Markets manage dashboard (MKT-6) to show a recent-changes feed.
+ *
+ * Pass the request-scoped Supabase client — the markets_audit_read RLS policy
+ * (migration 075) lets any Markets viewer+ SELECT the log, so the caller's own
+ * client is sufficient and keeps the read honouring RLS.
+ *
+ * @param client - a request-scoped Supabase client.
+ * @param limit  - maximum rows to return (default 20).
+ */
+export async function fetchRecentAuditChanges(
+  client: SupabaseClient,
+  limit = 20,
+): Promise<MarketsAuditEntry[]> {
+  const { data, error } = await client
+    .from('markets_audit')
+    .select('id, actor_id, action, target_table, row_id, old_value, new_value, note, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    throw new Error(`[markets] audit log read failed: ${error.message}`)
+  }
+  return (data ?? []) as MarketsAuditEntry[]
 }
