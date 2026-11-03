@@ -16,6 +16,8 @@ import HeadlineCards from './HeadlineCards'
 import ChoroplethMap from './ChoroplethMap'
 import RankingLists from './RankingLists'
 import AboutFiguresFooter from './AboutFigures'
+import AnalystPanel from '@/components/markets/analyst/AnalystPanel'
+import type { ExplorerParams } from '@/lib/markets/explorer'
 
 /**
  * Markets Overview tab (MKT-3). A fully client-driven explorer: every control
@@ -60,17 +62,37 @@ export default function OverviewExplorer() {
     })
   }
 
+  // Driven by the analyst's change_view tool — applies a commodity / scope /
+  // map-measure switch live, re-using the same validation as onChange so the
+  // page re-renders with a valid view.
+  const onChangeView = (next: Partial<ExplorerParams>) => {
+    const scopeIds = new Set(scopes.map(s => s.id))
+    const patch: Partial<ControlState> = {}
+    if (typeof next.commodity === 'string' && commodities.some(c => c.id === next.commodity)) {
+      patch.commodity = next.commodity
+    }
+    if (typeof next.scope === 'string' && scopeIds.has(next.scope)) {
+      patch.scope = next.scope
+    }
+    if (Object.keys(patch).length) onChange(patch)
+    if (typeof next.mapMeasure === 'string' && (RANKING_MEASURES as string[]).includes(next.mapMeasure)) {
+      setMapMeasure(next.mapMeasure as ExplorerMeasure)
+    }
+  }
+
+  const viewParams: ExplorerParams = {
+    commodity: state.commodity,
+    seasons: state.seasons,
+    annualAverage: state.annualAverage,
+    valuationMethod: state.valuationMethod,
+    fillGaps: state.fillGaps,
+    scope: state.scope,
+    mapMeasure,
+  }
+
   const view = useMemo(
-    () =>
-      buildExplorerView({
-        commodity: state.commodity,
-        seasons: state.seasons,
-        annualAverage: state.annualAverage,
-        valuationMethod: state.valuationMethod,
-        fillGaps: state.fillGaps,
-        scope: state.scope,
-        mapMeasure,
-      }),
+    () => buildExplorerView(viewParams),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [state, mapMeasure],
   )
 
@@ -102,20 +124,33 @@ export default function OverviewExplorer() {
         onChange={onChange}
       />
 
-      <HeadlineCards cards={view.cards} scopeLabel={scopeLabel} />
+      {/* Factual explorer (left) with the Agent Analysis panel to its right on
+          wide screens; the panel stacks below on narrow screens. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        <div className="min-w-0 flex-1 space-y-4">
+          <HeadlineCards cards={view.cards} scopeLabel={scopeLabel} />
 
-      <ChoroplethMap
-        map={view.map}
-        measure={mapMeasure}
-        measureLabel={mapCard?.label ?? mapMeasure}
-        measureFormat={mapCard?.format ?? 'number'}
-        measureLabelsById={measureLabelsById}
-        onMeasureChange={setMapMeasure}
-      />
+          <ChoroplethMap
+            map={view.map}
+            measure={mapMeasure}
+            measureLabel={mapCard?.label ?? mapMeasure}
+            measureFormat={mapCard?.format ?? 'number'}
+            measureLabelsById={measureLabelsById}
+            onMeasureChange={setMapMeasure}
+          />
 
-      <RankingLists rankings={view.rankings} />
+          <RankingLists rankings={view.rankings} />
 
-      <AboutFiguresFooter about={view.about} />
+          <AboutFiguresFooter about={view.about} />
+        </div>
+
+        <AnalystPanel
+          view={view}
+          viewParams={viewParams}
+          scopeLabel={scopeLabel}
+          onChangeView={onChangeView}
+        />
+      </div>
     </div>
   )
 }

@@ -12,7 +12,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { listCommodityOptions, getCommodityValuationMethods } from '@/lib/markets/explorer'
+import { listCommodityOptions, getCommodityValuationMethods, buildExplorerView, type ExplorerParams } from '@/lib/markets/explorer'
 import {
   buildCountryProfile,
   listProducerCountries,
@@ -20,6 +20,8 @@ import {
   type CountryMeasureCell,
 } from '@/lib/markets/views'
 import { formatMeasure, formatCompact } from '@/components/markets/overview/format'
+import AnalystPanel from '@/components/markets/analyst/AnalystPanel'
+import type { FallbackContext } from '@/lib/markets/analyst-fallback'
 import { cn } from '@/lib/utils'
 
 const selectClass =
@@ -170,12 +172,39 @@ export default function CountryProfile({ initialIso3 }: { initialIso3?: string }
     [commodity, iso3, season, valuationMethod],
   )
 
+  // The Agent Analysis panel reads an ExplorerView for its fallback facts and
+  // sends the view params to the chat API. On the Country tab we give it the
+  // WORLD view for the current commodity/season so the analyst can place the
+  // country inside the global market it's a part of.
+  const analystParams: ExplorerParams = useMemo(
+    () => ({
+      commodity,
+      seasons: view?.season ? [view.season] : [],
+      annualAverage: false,
+      valuationMethod,
+      fillGaps: true,
+      scope: 'WORLD',
+      mapMeasure: 'production',
+    }),
+    [commodity, valuationMethod, view?.season],
+  )
+  const analystView = useMemo(() => buildExplorerView(analystParams), [analystParams])
+  const fallbackContext: FallbackContext = useMemo(() => {
+    const parts = view?.structure?.breakdowns?.[0]?.parts ?? []
+    const top = parts.length ? parts.reduce((a, b) => (b.share > a.share ? b : a)) : null
+    return {
+      scopeLabel: view?.name,
+      farmStructure: top ? { label: top.label, share: top.share } : null,
+    }
+  }, [view])
+
   if (!view) {
     return <p className="text-sm text-muted-foreground">No data for this country.</p>
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
+    <div className="mx-auto max-w-7xl flex flex-col gap-4 lg:flex-row lg:items-start">
+      <div className="min-w-0 flex-1 space-y-4">
       <div>
         <h1 className="text-2xl font-bold">{view.name}</h1>
         <p className="text-sm text-muted-foreground">
@@ -364,6 +393,14 @@ export default function CountryProfile({ initialIso3 }: { initialIso3?: string }
       <p className="text-xs">
         <Link href="/markets" className="text-primary hover:underline">← Back to Overview</Link>
       </p>
+      </div>
+
+      <AnalystPanel
+        view={analystView}
+        viewParams={analystParams}
+        fallbackContext={fallbackContext}
+        scopeLabel={view.name}
+      />
     </div>
   )
 }

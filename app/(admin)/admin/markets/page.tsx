@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 
 interface MarketsUserRow {
   user_id:    string
@@ -89,11 +90,17 @@ export default function AdminMarketsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Markets Access</h1>
-        <p className="text-zinc-400 text-sm mt-1">
-          Grant or revoke Markets roles and invite users to Markets. Super admins always have full access.
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Markets Access</h1>
+          <p className="text-zinc-400 text-sm mt-1">
+            Grant or revoke Markets roles and invite users to Markets. Super admins always have full access.
+          </p>
+        </div>
+        <div className="flex gap-2 text-sm">
+          <Link href="/admin/markets/agents" className="text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded transition-colors">Agent config</Link>
+          <Link href="/admin/markets/usage" className="text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded transition-colors">Usage</Link>
+        </div>
       </div>
 
       {error && (
