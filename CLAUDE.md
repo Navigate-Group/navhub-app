@@ -6582,3 +6582,75 @@ auto-refreshed to "complete" or surfaced new findings without a manual reload.
   (module resolution for `@/components/ui/*`, `@/lib/utils`) is unrelated to this
   change and present on the base branch before these edits.
 
+## MKT-5 — Market Analyst (Agent Analysis panel + operator surfaces)
+
+### Summary
+Completes the Market Analyst feature by connecting the Phase-1 backend to the
+viewer and operator UIs: an in-view Agent Analysis panel with streaming analysis,
+chat, tool visibility and a deterministic fallback facts engine, plus the two
+operator surfaces (agent config + usage rollup). Markets is a global, role-gated
+area (MKT-1); non-Markets users never reach the panel, API or admin pages.
+
+### Viewer panel (`components/markets/analyst/AnalystPanel.tsx`)
+- Tinted/bordered panel — green in light mode, teal in dark — with a 2px border,
+  shaded header and "AI" tag, visually distinct from the factual explorer. All
+  colours come from Tailwind theme tokens. 400px wide on `lg`, stacks below on
+  narrow screens; chat scrolls vertically and suggested-question chips wrap.
+- First-load "Update analysis" prompt (blue button) triggers the headline run.
+  Analysis streams word-by-word from `/api/markets/analyst/chat` (mode
+  `analysis`). A Re-run button appears after the first run and shows "Agent
+  thinking…" while in progress.
+- Chat: admin-configurable suggested-question chips populate the input on click;
+  users type and send. Responses show the tools the model called (e.g.
+  `→ change_view(…)`). History keeps the last 12 turns, auto-scrolls to newest,
+  and fades older messages. Timeout/rate-limit errors render a message + "Try
+  again" (never silent).
+- `change_view` tool drives the scope control live — e.g. "Compare Asia with
+  South America" re-renders the page via `onChangeView` in
+  `components/markets/overview/OverviewExplorer.tsx`.
+- Wired into Overview (`OverviewExplorer`) and Country (`CountryProfile`),
+  positioned right of the headlines/map.
+
+### Fallback facts (`lib/markets/analyst-fallback.ts`)
+Pure, deterministic engine — six templates (Top share, Exporter concentration,
+Unit value range, Filled observations, Source diversity, Farm structure) computed
+directly from the on-screen `ExplorerView`; uncomputable templates are omitted
+(never invented). Rendered when the agent is disabled or a run fails (503).
+
+### API routes
+- `GET /api/markets/analyst/config` — viewer-safe config (enabled flag +
+  suggestions only; no prompts/model/usage).
+- `POST /api/markets/analyst/chat` — resolves live config, rebuilds the on-screen
+  `ExplorerView` server-side so the model only sees real figures, streams
+  newline-delimited JSON events (`text`/`tool`/`view`/`done`/`error`), exposes the
+  `change_view` tool, records per-user token usage, and returns 503 `fallback`
+  when disabled or no API key.
+- `GET|PUT /api/admin/markets/agents` — super-admin only; reads/writes the
+  singleton config (enable, model, prompts, suggestions CSV, cache TTL); audited.
+- Usage rollup served by `app/(admin)/admin/markets/usage/page.tsx` via
+  `getAnalystUsageRollup()`.
+
+### Config/usage helpers (`lib/markets/analyst.ts`)
+`getAnalystConfig()` merges the `markets_agent_config` DB override over the
+`config.agent` block in `markets_sample.json` (seed stays source of truth until
+edited). `saveAnalystConfig()` upserts the singleton; `recordAnalystUsage()` is
+best-effort; `getAnalystUsageRollup()` aggregates tokens per user with email
+enrichment. Models offered: Claude 3.5 Sonnet, Claude 3 Opus, GPT-4o.
+
+### Admin pages
+- `/admin/markets/agents` — enable/disable toggle, model dropdown, analysis +
+  chat prompt textareas, suggested-questions CSV, cache TTL (hours). Changes
+  apply immediately to new runs (chat route resolves config per request).
+- `/admin/markets/usage` — tokens per user per agent. Both linked from the
+  Markets Access admin dashboard.
+
+### Schema (`supabase/migrations/074_markets_agent.sql`)
+`markets_agent_config` (singleton, RLS: markets readers read / super admin write)
+and `markets_agent_usage` (append-only ledger, RLS: super admin read). Idempotent.
+
+### Build status
+MKT-5 files are internally consistent (all imports resolve to real exports). The
+whole-repo `next build` remains red ONLY due to the pre-existing, unrelated
+`app/(admin)/admin/assistant/page.tsx` module-resolution failure noted above —
+not introduced by MKT-5 and out of scope to fix.
+
