@@ -116,12 +116,24 @@ test('queueObservation surfaces a database error', async () => {
 
 // ── Fake client for SELECT (fetchPendingReviews) ─────────────────────────────
 
+/**
+ * The chainable, thenable query-builder surface the fake select client returns,
+ * mirroring the subset of supabase-js that fetchPendingReviews drives.
+ */
+interface QueryBuilder {
+  eq(column: string, value: unknown): QueryBuilder
+  order(column: string, opts: { ascending: boolean }): QueryBuilder
+  then(
+    resolve: (r: { data: ReviewQueueEntry[] | null; error: unknown }) => unknown,
+  ): unknown
+}
+
 function makeSelectClient(rows: ReviewQueueEntry[], opts?: { error?: { message: string } }) {
   const filters: { column: string; value: unknown }[] = []
   const orders: { column: string; ascending: boolean }[] = []
 
-  function builder(): any {
-    const chain = {
+  function builder(): QueryBuilder {
+    const chain: QueryBuilder = {
       eq(column: string, value: unknown) {
         filters.push({ column, value })
         return chain
