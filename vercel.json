@@ -21,6 +21,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/process-markets-extractions",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/sage-weekly",
       "schedule": "0 23 * * 0"
     },
