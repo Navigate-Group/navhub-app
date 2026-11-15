@@ -284,17 +284,15 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
             <NavLink href="/home" label="Home" Icon={Home} mobile={mobile} />
 
             {/* ── Core ── */}
-            {(show('agents') || show('marketing') || showMarkets) && (
+            {(show('agents') || show('documents') || show('reports')) && (
               <NavSectionLabel label="Core" mobile={mobile} />
             )}
-            {show('agents')    && <NavLink href="/agents"    label="Agents"    Icon={Bot}      mobile={mobile} />}
-            {show('marketing') && <NavLink href="/marketing" label="Marketing" Icon={Megaphone} mobile={mobile} />}
-            {/* Markets — role-gated area (MKT-1). Visible only to Markets role
-                holders / super admins. */}
-            {showMarkets       && <NavLink href="/markets"   label="Markets"   Icon={LineChart} mobile={mobile} />}
+            {show('agents')    && <NavLink href="/agents"         label="Agents"    Icon={Bot}       mobile={mobile} />}
+            {show('documents') && <NavLink href="/documents"      label="Documents" Icon={FileText}  mobile={mobile} />}
+            {show('reports')   && <NavLink href="/reports/custom" label="Reports"   Icon={BarChart2} mobile={mobile} />}
 
             {/* ── Data ── */}
-            {(show('financials') || show('reports') || show('documents')) && (
+            {(show('financials') || show('reports') || show('marketing') || showMarkets) && (
               <NavSectionLabel label="Data" mobile={mobile} />
             )}
             {/* Financials — collapsible subgroup */}
@@ -306,8 +304,10 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
               {show('financials') && <SubLink href="/cashflow"              label="Cash Flow"     mobile={mobile} />}
               {show('financials') && <SubLink href="/forecasting/revenue"   label="Forecasting"   mobile={mobile} />}
             </NavGroup>
-            {show('reports')   && <NavLink href="/reports/custom" label="Reports"   Icon={BarChart2} mobile={mobile} />}
-            {show('documents') && <NavLink href="/documents"      label="Documents" Icon={FileText}  mobile={mobile} />}
+            {show('marketing') && <NavLink href="/marketing" label="Marketing" Icon={Megaphone} mobile={mobile} />}
+            {/* Markets — role-gated area (MKT-1). Visible only to Markets role
+                holders / super admins. */}
+            {showMarkets       && <NavLink href="/markets"   label="Markets"   Icon={LineChart} mobile={mobile} />}
 
             {/* ── Configuration ── */}
             {(isAdmin || show('settings')) && (
