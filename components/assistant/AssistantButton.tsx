@@ -50,15 +50,20 @@ export default function AssistantButton({
           aria-label={`Open ${personaName}`}
           className={
             collapsed
-              ? 'w-full flex items-center justify-center py-2 rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition-colors'
-              : 'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/5 transition-colors'
+              ? 'w-full flex items-center justify-center py-2 rounded-md text-white/80 hover:text-white transition-colors'
+              : 'w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-sm font-medium text-white/85 hover:text-white transition-colors'
           }
         >
           <Sparkles
             className="h-4 w-4 flex-shrink-0"
             style={{ color: 'var(--palette-primary)' }}
           />
-          {!collapsed && <span>{personaName}</span>}
+          {!collapsed && (
+            <span className="flex flex-col items-start leading-tight">
+              <span>{personaName}</span>
+              <span className="text-[10px] font-normal text-white/45">Ask for help</span>
+            </span>
+          )}
         </button>
 
         {open && (

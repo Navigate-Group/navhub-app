@@ -48,7 +48,7 @@ export async function signIn(formData: FormData) {
     })
   }
 
-  redirect('/dashboard')
+  redirect('/home')
 }
 
 // ============================================================
