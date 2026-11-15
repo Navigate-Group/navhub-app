@@ -6586,3 +6586,77 @@ auto-refreshed to "complete" or surfaced new findings without a manual reload.
   (module resolution for `@/components/ui/*`, `@/lib/utils`) is unrelated to this
   change and present on the base branch before these edits.
 
+---
+
+## Welcoming Home Page + Grouped Sidebar Nav
+
+### Goal
+Replace the confusing zero-state dashboard with a welcoming home page that
+orients users to NavHub's core features, and restructure the sidebar nav into
+logical groups for discoverability. All existing functionality and access
+controls are preserved.
+
+### Route decision (divergence from brief)
+The brief specified the new home at `app/(dashboard)/landing/page.tsx`, but a
+PUBLIC group-picker page already exists at `app/landing/page.tsx` (dark-only, no
+app shell; the no-group gate that `(dashboard)/layout.tsx` and `middleware.ts`
+redirect to). Two files both resolving to `/landing` is a Next.js route
+collision. Per operator decision, the new home lives at **`/home`**
+(`app/(dashboard)/home/page.tsx`) and the existing public `/landing` is left
+untouched.
+
+### New files
+- **`app/(dashboard)/home/page.tsx`** — client component. Greeting +
+  time-of-day, a responsive 6-tile feature grid (Agents, Documents, Reports,
+  Financials, Marketing, Markets), and an assistant guidance strip. Tiles are
+  gated by feature access (derived client-side from the permission matrix via an
+  inlined `visibleFeaturesFromMatrix` — NOT imported from the server-only
+  `lib/permissions`). CTA text is connection-aware: Financials shows
+  "Connect Xero" vs "View financials"; Marketing shows "Connect GA4" vs
+  "View marketing"; Agents/Documents switch on inventory counts. The Agents tile
+  carries a blue accent border. Markets tile only renders for Markets role
+  holders. Light/dark + responsive (down to ~400px).
+- **`app/api/home/status/route.ts`** — `GET` returning
+  `{ xero_connected, marketing_connected, agent_count, document_count,
+  markets_visible }`. Scoped to the active group; `markets_visible` uses
+  `getMarketsAccess` / `canViewMarkets`. Xero detection mirrors the dashboard
+  summary route (joins `xero_connections` by company/division); marketing uses
+  active `marketing_connections` for the group.
+- **`components/layout/GroupSwitcherModal.tsx`** — modal variant of the group
+  switcher opened from the user dropdown; reuses `switchGroup` server action and
+  applies the palette immediately, then routes to `/home` + refresh.
+
+### Changed files
+- **`components/layout/AppShell.tsx`** — sidebar nav restructured into sections:
+  no-label (Home), **Core** (Agents, Marketing, Markets), **Data** (Financials
+  collapsible subgroup → P&L, Balance Sheet, Cash Flow, Forecasting; plus
+  Reports, Documents), **Configuration** (Integrations [admin], Settings). The
+  old **Dashboard** nav entry is removed. New `NavSectionLabel` helper renders
+  uppercase section headers (a divider when collapsed). The assistant button is
+  now wrapped in a distinct bordered card at the sidebar bottom (still persistent
+  via `AssistantButton sidebarMode`). The top-bar `GroupSwitcher` was removed;
+  the user dropdown now has a **Switch group** item (opens `GroupSwitcherModal`,
+  hidden when the user belongs to ≤1 group) alongside Home, Create new group,
+  Share feedback, Change password, Sign out. Home dropdown link + logo link now
+  point to `/home`.
+- **`components/assistant/AssistantButton.tsx`** — sidebar-mode styling updated
+  to read as a card button (adds an "Ask for help" sub-label; defers background
+  to the AppShell card wrapper). Floating mode (admin layout) unchanged.
+- **`app/(dashboard)/dashboard/page.tsx`** — now a server component that
+  `redirect('/home')`. The original dashboard implementation is preserved at
+  `app/(dashboard)/dashboard/_legacy/DashboardPage.tsx` (underscore prefix =
+  not a route).
+- **`middleware.ts`**, **`app/(auth)/actions.ts#signIn`**, **`app/page.tsx`** —
+  default post-login redirects changed from `/dashboard` to `/home`. Other
+  `/dashboard` references (access-denial fallbacks, breadcrumbs) are left intact
+  and still work because `/dashboard` redirects to `/home`.
+
+### Notes
+- Whole-repo `npm run build` compiles successfully (✓ Compiled successfully) and
+  `tsc --noEmit` is clean after these changes. Build-time logs about missing
+  `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` and a
+  dynamic-server-usage warning on `/api/reports/custom/tags` are pre-existing and
+  environmental, unrelated to this work.
+- `components/layout/GroupSwitcher.tsx` is now unused (superseded by the modal)
+  but left in place to keep the diff focused.
+

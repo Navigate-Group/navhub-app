@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation'
 import pkg from '@/package.json'
 import { useTheme } from 'next-themes'
 import {
-  LayoutDashboard,
   Settings,
   Menu,
   X,
@@ -26,9 +25,10 @@ import {
   Home,
   MessageSquarePlus,
   LineChart,
+  Repeat,
 } from 'lucide-react'
 import { signOut } from '@/app/(auth)/actions'
-import GroupSwitcher from './GroupSwitcher'
+import GroupSwitcherModal from './GroupSwitcherModal'
 import {
   Tooltip,
   TooltipContent,
@@ -90,6 +90,7 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
   const [mounted,       setMounted]       = useState(false)
   const [showCreateGrp, setShowCreateGrp] = useState(false)
   const [showFeedback,  setShowFeedback]  = useState(false)
+  const [showGroupSwitch, setShowGroupSwitch] = useState(false)
 
   // Derive admin status from active group membership
   const activeRole = userRole ?? (groups.find(g => g.group_id === activeGroup.id)?.role as AppRole | undefined)
@@ -144,7 +145,7 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
   function NavLink({
     href, label, Icon, mobile = false,
   }: { href: string; label: string; Icon: React.ComponentType<{ className?: string }>; mobile?: boolean }) {
-    const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+    const active = pathname === href || (href !== '/home' && pathname.startsWith(href))
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -178,20 +179,17 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
   // Old group components removed — replaced by generic NavGroup above
 
   // Collapsible nav group state (persisted in localStorage)
-  const [financialsOpen,  setFinancialsOpen]  = useState(() => pathname.startsWith('/reports') || pathname.startsWith('/cashflow') || pathname.startsWith('/forecasting'))
-  const [reportsDocsOpen, setReportsDocsOpen] = useState(() => pathname.startsWith('/reports/custom') || pathname.startsWith('/documents'))
+  const [financialsOpen,  setFinancialsOpen]  = useState(() => pathname.startsWith('/reports/profit') || pathname.startsWith('/reports/balance') || pathname.startsWith('/cashflow') || pathname.startsWith('/forecasting'))
 
   useEffect(() => {
     try {
       const f = localStorage.getItem('navhub:nav:financials');  if (f !== null) setFinancialsOpen(f === 'true')
-      const r = localStorage.getItem('navhub:nav:reportsdocs'); if (r !== null) setReportsDocsOpen(r === 'true')
     } catch { /* ignore */ }
   }, [])
 
   // Auto-expand group when navigating into it
   useEffect(() => {
     if (pathname.startsWith('/reports/profit') || pathname.startsWith('/reports/balance') || pathname.startsWith('/cashflow') || pathname.startsWith('/forecasting')) setFinancialsOpen(true)
-    if (pathname.startsWith('/reports/custom') || pathname.startsWith('/documents')) setReportsDocsOpen(true)
   }, [pathname])
 
   function toggleNavGroup(key: string, setter: React.Dispatch<React.SetStateAction<boolean>>) {
@@ -241,7 +239,7 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
   }
 
   function SubLink({ href, label: lbl, mobile: isMob = false }: { href: string; label: string; mobile?: boolean }) {
-    const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+    const active = pathname === href || (href !== '/home' && pathname.startsWith(href))
     return (
       <Link href={href} onClick={() => setMobileOpen(false)}
         className={cn(
@@ -253,6 +251,20 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
       </Link>
     )
     void isMob // satisfy lint
+  }
+
+  // Section header — a small uppercase label separating nav groups. Hidden when
+  // the sidebar is collapsed (icons only); a thin divider is shown instead.
+  function NavSectionLabel({ label, mobile: isMob = false }: { label: string; mobile?: boolean }) {
+    const exp = !collapsed || isMob
+    if (!exp) {
+      return <div className="my-1 mx-2 border-t border-white/10" />
+    }
+    return (
+      <p className="px-2 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+        {label}
+      </p>
+    )
   }
 
   function Sidebar({ mobile = false }: { mobile?: boolean }) {
@@ -267,64 +279,69 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
           )}
           style={{ backgroundColor: 'var(--palette-surface)', ...(!mobile ? { top: 56 + topOffset } : {}) }}
         >
-          <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
-            {/* Dashboard — always visible */}
-            <NavLink href="/dashboard" label="Dashboard" Icon={LayoutDashboard} mobile={mobile} />
+          <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+            {/* ── No-label section — Home ── */}
+            <NavLink href="/home" label="Home" Icon={Home} mobile={mobile} />
 
-            {/* Financials group */}
+            {/* ── Core ── */}
+            {(show('agents') || show('marketing') || showMarkets) && (
+              <NavSectionLabel label="Core" mobile={mobile} />
+            )}
+            {show('agents')    && <NavLink href="/agents"    label="Agents"    Icon={Bot}      mobile={mobile} />}
+            {show('marketing') && <NavLink href="/marketing" label="Marketing" Icon={Megaphone} mobile={mobile} />}
+            {/* Markets — role-gated area (MKT-1). Visible only to Markets role
+                holders / super admins. */}
+            {showMarkets       && <NavLink href="/markets"   label="Markets"   Icon={LineChart} mobile={mobile} />}
+
+            {/* ── Data ── */}
+            {(show('financials') || show('reports') || show('documents')) && (
+              <NavSectionLabel label="Data" mobile={mobile} />
+            )}
+            {/* Financials — collapsible subgroup */}
             <NavGroup label="Financials" Icon={BarChart2} open={financialsOpen}
               onToggle={() => toggleNavGroup('financials', setFinancialsOpen)}
               visible={show('financials') || show('reports')} mobile={mobile}>
-              {show('reports') && <SubLink href="/reports/profit-loss" label="P&L" mobile={mobile} />}
-              {show('reports') && <SubLink href="/reports/balance-sheet" label="Balance Sheet" mobile={mobile} />}
-              {show('financials') && <SubLink href="/cashflow" label="Cash Flow" mobile={mobile} />}
-              {show('financials') && <SubLink href="/forecasting/revenue" label="Forecasting" mobile={mobile} />}
+              {show('reports')    && <SubLink href="/reports/profit-loss"   label="P&L"           mobile={mobile} />}
+              {show('reports')    && <SubLink href="/reports/balance-sheet" label="Balance Sheet" mobile={mobile} />}
+              {show('financials') && <SubLink href="/cashflow"              label="Cash Flow"     mobile={mobile} />}
+              {show('financials') && <SubLink href="/forecasting/revenue"   label="Forecasting"   mobile={mobile} />}
             </NavGroup>
+            {show('reports')   && <NavLink href="/reports/custom" label="Reports"   Icon={BarChart2} mobile={mobile} />}
+            {show('documents') && <NavLink href="/documents"      label="Documents" Icon={FileText}  mobile={mobile} />}
 
-            {/* Marketing — single item */}
-            {show('marketing') && <NavLink href="/marketing" label="Marketing" Icon={Megaphone} mobile={mobile} />}
-
-            {/* Reports & Documents group */}
-            <NavGroup label="Reports & Docs" Icon={FileText} open={reportsDocsOpen}
-              onToggle={() => toggleNavGroup('reportsdocs', setReportsDocsOpen)}
-              visible={show('reports') || show('documents')} mobile={mobile}>
-              {show('reports') && <SubLink href="/reports/custom" label="Reports" mobile={mobile} />}
-              {show('documents') && <SubLink href="/documents" label="Documents" mobile={mobile} />}
-            </NavGroup>
-
-            {/* Agents — top level */}
-            {show('agents') && <NavLink href="/agents" label="Agents" Icon={Bot} mobile={mobile} />}
-
-            {/* Markets — role-gated area (MKT-1). Visible only to Markets role
-                holders / super admins; links out of the NavHub shell. */}
-            {showMarkets && <NavLink href="/markets" label="Markets" Icon={LineChart} mobile={mobile} />}
-
-            {/* Integrations — admin-only, between Agents and Settings */}
-            {isAdmin && (
-              <NavLink href="/integrations" label="Integrations" Icon={Plug} mobile={mobile} />
+            {/* ── Configuration ── */}
+            {(isAdmin || show('settings')) && (
+              <NavSectionLabel label="Configuration" mobile={mobile} />
             )}
-
-            {/* Settings — top level */}
-            {show('settings') && <NavLink href="/settings" label="Settings" Icon={Settings} mobile={mobile} />}
+            {isAdmin           && <NavLink href="/integrations" label="Integrations" Icon={Plug}     mobile={mobile} />}
+            {show('settings')  && <NavLink href="/settings"     label="Settings"     Icon={Settings} mobile={mobile} />}
 
             {(!collapsed || mobile) && <HelpMenu userEmail={user.email} />}
           </nav>
 
-          {/* Assistant button — pinned to sidebar bottom */}
-          <div className="px-3 pb-2">
-            {collapsed && !mobile ? (
-              <AssistantButton
-                sidebarMode
-                collapsed
-                groupId={activeGroup.id}
-              />
-            ) : (
-              <AssistantButton
-                sidebarMode
-                groupId={activeGroup.id}
-                onOpen={() => { if (mobile) setMobileOpen(false) }}
-              />
-            )}
+          {/* Assistant — persistent, pinned to sidebar bottom. Styled as a
+              distinct card/button so it reads differently from nav links. */}
+          <div className="px-3 pb-3 pt-1">
+            <div
+              className={cn(
+                'rounded-lg border border-white/15 bg-white/[0.06] hover:bg-white/10 transition-colors',
+                collapsed && !mobile ? 'p-0.5' : 'p-1',
+              )}
+            >
+              {collapsed && !mobile ? (
+                <AssistantButton
+                  sidebarMode
+                  collapsed
+                  groupId={activeGroup.id}
+                />
+              ) : (
+                <AssistantButton
+                  sidebarMode
+                  groupId={activeGroup.id}
+                  onOpen={() => { if (mobile) setMobileOpen(false) }}
+                />
+              )}
+            </div>
           </div>
 
           {!mobile && mounted && (
@@ -371,7 +388,7 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
           <Menu className="h-5 w-5" />
         </button>
 
-        <Link href="/dashboard" className="font-bold text-lg tracking-tight mr-2 flex items-center gap-2">
+        <Link href="/home" className="font-bold text-lg tracking-tight mr-2 flex items-center gap-2">
           {branding.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -389,10 +406,6 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
         <div className="flex-1" />
 
         <div className="flex items-center gap-2">
-          {groups.length > 0 && (
-            <GroupSwitcher groups={groups} activeGroup={activeGroup} />
-          )}
-
           {mounted && (
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -421,14 +434,29 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
 
-              {/* Home — landing page (group picker for users with multiple groups) */}
+              {/* Home — the welcoming home page */}
               <DropdownMenuItem asChild className="cursor-pointer text-foreground">
-                <Link href="/landing">
+                <Link href="/home">
                   <Home className="mr-2 h-4 w-4" />
                   Home
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+
+              {/* Switch group — modal picker. Hidden when the user belongs to
+                  only one group (nothing to switch to). */}
+              {groups.length > 1 && (
+                <>
+                  <DropdownMenuItem
+                    onSelect={() => setShowGroupSwitch(true)}
+                    className="cursor-pointer text-foreground"
+                  >
+                    <Repeat className="mr-2 h-4 w-4" />
+                    Switch group
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
 
               {/* Create Group — super_admin and group_admin */}
               {(isSuperAdmin || isAdmin) && (
@@ -482,6 +510,15 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
       {/* Create Group Modal */}
       {showCreateGrp && (
         <CreateGroupModal onClose={() => setShowCreateGrp(false)} />
+      )}
+
+      {/* Switch Group Modal — opened from the user dropdown */}
+      {showGroupSwitch && groups.length > 1 && (
+        <GroupSwitcherModal
+          groups={groups}
+          activeGroup={activeGroup}
+          onClose={() => setShowGroupSwitch(false)}
+        />
       )}
 
       {/* Feedback modal — three-question structured form */}

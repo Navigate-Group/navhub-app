@@ -97,7 +97,7 @@ export async function middleware(request: NextRequest) {
     // they must be allowed to reach /login to use that session.
     const isInviteSetup = request.nextUrl.searchParams.get('setup') === 'true'
     if (pathname === '/login' && session && !isInviteSetup) {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+      return NextResponse.redirect(new URL('/home', request.url))
     }
 
     return response
