@@ -19,6 +19,7 @@ const TABS: Array<{ href: string; label: string; match: (p: string) => boolean }
   { href: '/markets/manage/coverage', label: 'Data coverage', match: p => p.startsWith('/markets/manage/coverage') },
   { href: '/markets/manage/sources', label: 'Sources', match: p => p.startsWith('/markets/manage/sources') },
   { href: '/markets/manage/documents', label: 'Documents', match: p => p.startsWith('/markets/manage/documents') },
+  { href: '/markets/manage/review', label: 'Review queue', match: p => p.startsWith('/markets/manage/review') },
 ]
 
 export default function ManageTabs() {

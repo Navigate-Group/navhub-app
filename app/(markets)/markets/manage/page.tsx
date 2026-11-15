@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Settings2, Globe2, Sprout, Database, BookMarked, Boxes } from 'lucide-react'
+import { Settings2, Globe2, Sprout, Database, BookMarked, Boxes, FileText, ClipboardCheck } from 'lucide-react'
 import { requireManagerPage } from './_guard'
 import ManageTabs from '@/components/markets/manage/ManageTabs'
 
@@ -14,6 +14,8 @@ const SECTIONS: Array<{ href: string; label: string; blurb: string; Icon: React.
   { href: '/markets/manage/structure', label: 'Farm structure', blurb: 'Per-commodity, per-geography structure notes.', Icon: Sprout },
   { href: '/markets/manage/coverage', label: 'Data coverage', blurb: 'Price series, FX rates and valuation methods.', Icon: Database },
   { href: '/markets/manage/sources', label: 'Sources', blurb: 'The source registry behind every figure.', Icon: BookMarked },
+  { href: '/markets/manage/documents', label: 'Documents', blurb: 'Upload source documents and extract proposed observations.', Icon: FileText },
+  { href: '/markets/manage/review', label: 'Review queue', blurb: 'Review, correct and approve extracted figures into the live dataset.', Icon: ClipboardCheck },
 ]
 
 export default async function MarketsManagePage() {
