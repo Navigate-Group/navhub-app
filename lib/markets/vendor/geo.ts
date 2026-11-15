@@ -137,14 +137,18 @@ export interface ProjectedBox {
 
 /**
  * Project [lon, lat] → [x, y] into a fixed box. Equirectangular: x is linear
- * in longitude (−180..180), y is linear in latitude (clamped to the Web-safe
- * −85.06..85.06 so Antarctica's clipped topology fills the frame cleanly).
+ * in longitude (−180..180), y is linear in latitude.
+ *
+ * The full latitude range (−90..90) is projected so the whole world — including
+ * Antarctica — is displayed at every breakpoint (the box is always filled via
+ * `preserveAspectRatio` on the SVG). We no longer crop the southern band, which
+ * previously dropped Antarctica from the frame.
  */
 export function makeProjection(box: ProjectedBox) {
   const LON_MIN = -180
   const LON_MAX = 180
-  const LAT_MIN = -60 // crop the empty Antarctic band for a tighter world view
-  const LAT_MAX = 84
+  const LAT_MIN = -90 // whole-world display: keep Antarctica in frame
+  const LAT_MAX = 90
   const sx = box.width / (LON_MAX - LON_MIN)
   const sy = box.height / (LAT_MAX - LAT_MIN)
   const s = Math.min(sx, sy)
@@ -160,6 +164,34 @@ export function makeProjection(box: ProjectedBox) {
   }
 }
 
+/**
+ * Split a ring at the antimeridian (±180°). An equirectangular projection maps
+ * longitude linearly, so a polygon that crosses the 180° meridian (e.g. Russia,
+ * Fiji, the Aleutians) would otherwise draw a spurious horizontal band spanning
+ * the whole map. We detect any edge whose longitude delta exceeds 180° — the
+ * signature of a wrap — and break the ring into separate sub-rings there, so
+ * each piece stays on its own side of the meridian.
+ */
+function splitRingAtAntimeridian(ring: Ring): Ring[] {
+  if (ring.length < 2) return [ring]
+  const segments: Ring[] = []
+  let current: Ring = [ring[0]]
+  for (let i = 1; i < ring.length; i++) {
+    const [prevLon] = ring[i - 1]
+    const [lon] = ring[i]
+    if (Math.abs(lon - prevLon) > 180) {
+      // Wrap detected — close off the current segment and start a new one.
+      segments.push(current)
+      current = [ring[i]]
+    } else {
+      current.push(ring[i])
+    }
+  }
+  segments.push(current)
+  // Drop degenerate fragments that cannot form a visible area.
+  return segments.filter(seg => seg.length >= 2)
+}
+
 /** Build an SVG path `d` string for a feature using the given projection. */
 export function featurePath(
   feature: CountryFeature,
@@ -168,12 +200,14 @@ export function featurePath(
   let d = ''
   for (const polygon of feature.polygons) {
     for (const ring of polygon) {
-      for (let i = 0; i < ring.length; i++) {
-        const [lon, lat] = ring[i]
-        const [x, y] = project(lon, lat)
-        d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1)
+      for (const segment of splitRingAtAntimeridian(ring)) {
+        for (let i = 0; i < segment.length; i++) {
+          const [lon, lat] = segment[i]
+          const [x, y] = project(lon, lat)
+          d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1)
+        }
+        d += 'Z'
       }
-      d += 'Z'
     }
   }
   return d
