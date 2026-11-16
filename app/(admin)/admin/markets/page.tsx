@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { Settings, BarChart3, ScrollText } from 'lucide-react'
 
 interface MarketsUserRow {
   user_id:    string
@@ -94,6 +96,52 @@ export default function AdminMarketsPage() {
         <p className="text-zinc-400 text-sm mt-1">
           Grant or revoke Markets roles and invite users to Markets. Super admins always have full access.
         </p>
+      </div>
+
+      {/* Admin control surfaces */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Link
+          href="/admin/markets/settings"
+          className="block p-5 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-800/60 transition-colors"
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20">
+              <Settings className="h-5 w-5 text-amber-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white">Settings</h2>
+              <p className="text-xs text-zinc-400 mt-1">Display config, defaults and the usage cap.</p>
+            </div>
+          </div>
+        </Link>
+        <Link
+          href="/admin/markets/usage"
+          className="block p-5 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-800/60 transition-colors"
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20">
+              <BarChart3 className="h-5 w-5 text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white">Usage</h2>
+              <p className="text-xs text-zinc-400 mt-1">Token usage by user, agent and day.</p>
+            </div>
+          </div>
+        </Link>
+        <Link
+          href="/admin/markets/audit"
+          className="block p-5 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-800/60 transition-colors"
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/20">
+              <ScrollText className="h-5 w-5 text-emerald-400" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white">Audit log</h2>
+              <p className="text-xs text-zinc-400 mt-1">Who changed what data, and when.</p>
+            </div>
+          </div>
+        </Link>
       </div>
 
       {error && (

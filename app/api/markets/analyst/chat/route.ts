@@ -8,6 +8,7 @@ import {
   cellAttribution,
 } from '@/lib/markets/analyst'
 import { getAnalystConfig } from '@/lib/markets/analyst-config'
+import { getUserCapStatus } from '@/lib/markets/settings'
 import {
   buildExplorerView,
   getDefaultCommodity,
@@ -156,6 +157,21 @@ export async function POST(req: Request) {
   const config = await getAnalystConfig()
   if (!config.enabled) {
     return NextResponse.json({ error: 'The Market Analyst is currently disabled' }, { status: 503 })
+  }
+
+  // Enforce the per-user daily token cap (MKT-8). A cap of 0 means unlimited;
+  // when a user has reached their configured cap for the UTC day they are cut
+  // off with a 429 until the day rolls over.
+  const cap = await getUserCapStatus(ctx.userId)
+  if (cap.exceeded) {
+    return NextResponse.json(
+      {
+        error: `Daily Market Analyst token cap reached (${cap.used.toLocaleString()} / ${cap.cap.toLocaleString()}). Try again tomorrow or ask an administrator to raise the cap.`,
+        cap: cap.cap,
+        used: cap.used,
+      },
+      { status: 429 },
+    )
   }
 
   const viewContext = buildViewContext(view)
