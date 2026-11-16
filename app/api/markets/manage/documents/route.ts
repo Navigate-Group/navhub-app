@@ -3,6 +3,7 @@ import { requireManager } from '../_auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { classifyFile, sizeLimitFor, SIZE_LIMITS } from '@/lib/markets/extract'
 import { enqueueDocument } from '@/lib/markets/extract-runner'
+import { logChange } from '@/lib/markets/audit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -144,6 +145,33 @@ export async function POST(req: Request) {
   }
 
   const documentId = (doc as { id: string }).id
+
+  // ── Audit the document creation (MKT-8) ───────────────────────────────────
+  // Record every markets_documents change in the immutable markets_audit log so
+  // the /admin/markets/audit surface can report it. Best-effort — a logging
+  // failure must not fail the upload (the file + row already succeeded).
+  try {
+    await logChange({
+      actorId: ctx.userId,
+      action: 'insert',
+      targetTable: 'markets_documents',
+      rowId: documentId,
+      newValue: {
+        title,
+        original_filename: file.name,
+        mime_type: file.type || null,
+        size_bytes: file.size,
+        commodities,
+        geographies,
+        season,
+        source_id: sourceId,
+        status: 'pending_extraction',
+      },
+      note: 'document uploaded',
+    })
+  } catch (err) {
+    console.error('[markets] document audit log failed:', err instanceof Error ? err.message : String(err))
+  }
 
   // ── Enqueue extraction chunks ─────────────────────────────────────────────
   let chunks = 0

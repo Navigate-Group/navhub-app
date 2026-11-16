@@ -8,6 +8,7 @@ import {
   cellAttribution,
 } from '@/lib/markets/analyst'
 import { getAnalystConfig } from '@/lib/markets/analyst-config'
+import { checkAnalystCap } from '@/lib/markets/usage'
 import {
   buildExplorerView,
   getDefaultCommodity,
@@ -156,6 +157,15 @@ export async function POST(req: Request) {
   const config = await getAnalystConfig()
   if (!config.enabled) {
     return NextResponse.json({ error: 'The Market Analyst is currently disabled' }, { status: 503 })
+  }
+
+  // Enforce the per-user daily token cap (MKT-8). The check is evaluated BEFORE
+  // this call against the user's already-accumulated total, so one call of
+  // overage is tolerated; cached analyses (which consume no tokens) are not
+  // counted; super admins are exempt (their usage is still logged below).
+  const cap = await checkAnalystCap(ctx.supabase, ctx.userId)
+  if (!cap.allowed) {
+    return NextResponse.json({ error: cap.message }, { status: 429 })
   }
 
   const viewContext = buildViewContext(view)
