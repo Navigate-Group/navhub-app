@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import MarketsAdminNav from '@/components/admin/markets/MarketsAdminNav'
 
 interface MarketsUserRow {
   user_id:    string
@@ -89,6 +90,7 @@ export default function AdminMarketsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
+      <MarketsAdminNav />
       <div>
         <h1 className="text-2xl font-bold text-white">Markets Access</h1>
         <p className="text-zinc-400 text-sm mt-1">
