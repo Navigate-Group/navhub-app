@@ -183,8 +183,8 @@ export async function applyPlanMembers(
   const existing = new Set((current ?? []).map((r) => r.user_id as string))
   const desired = new Set(desiredMemberIds.filter(Boolean))
 
-  const toAdd = [...desired].filter((id) => !existing.has(id))
-  const toRemove = [...existing].filter((id) => !desired.has(id))
+  const toAdd = Array.from(desired).filter((id) => !existing.has(id))
+  const toRemove = Array.from(existing).filter((id) => !desired.has(id))
 
   if (toAdd.length > 0) {
     const { error } = await supabase
