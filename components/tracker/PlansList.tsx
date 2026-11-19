@@ -1,0 +1,251 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { FolderKanban } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
+import { ToggleSwitch } from '@/components/ui/toggle-switch'
+import {
+  type Lookups,
+  lookupLabel,
+  formatDate,
+  daysBetweenISO,
+} from '@/lib/tracker/view'
+import { cn } from '@/lib/utils'
+
+export type PlanListItem = {
+  id: string
+  name: string
+  client: string | null
+  phase: string | null
+  region: string | null
+  category: string | null
+  status: string | null
+  archived: boolean
+  isActive: boolean
+  lastUpdated: string | null
+  openActions: number
+  subPlans: number
+  needsAttention: boolean
+  nextActionTitle: string | null
+  nextActionDue: string | null
+  flagStatus: boolean
+  flagNoOpenAction: boolean
+  flagOverdueAction: boolean
+  flagStale: boolean
+  nextMilestoneTitle: string | null
+  nextMilestoneDone: number | null
+  nextMilestoneTotal: number | null
+  nextMilestonePct: number | null
+}
+
+type Filter = 'active' | 'attention' | 'all'
+
+export default function PlansList({
+  items,
+  lookups,
+  today,
+  isEditor,
+}: {
+  items: PlanListItem[]
+  lookups: Lookups
+  today: string
+  isEditor: boolean
+}) {
+  const [filter, setFilter] = useState<Filter>('active')
+  const [showArchived, setShowArchived] = useState(false)
+
+  const visible = useMemo(() => {
+    return items.filter((p) => {
+      if (p.archived) return isEditor && showArchived
+      if (filter === 'active') return p.status !== 'finished'
+      if (filter === 'attention') return p.needsAttention
+      return true // all
+    })
+  }, [items, filter, showArchived, isEditor])
+
+  // Group by category in lookup order; unknown/none last.
+  const groups = useMemo(() => {
+    const categoryOrder = lookups.category ?? []
+    const byKey = new Map<string, PlanListItem[]>()
+    for (const p of visible) {
+      const key = p.category ?? '__none__'
+      ;(byKey.get(key) ?? byKey.set(key, []).get(key)!).push(p)
+    }
+    const ordered: { key: string; label: string; plans: PlanListItem[] }[] = []
+    for (const c of categoryOrder) {
+      if (byKey.has(c.key)) {
+        ordered.push({ key: c.key, label: c.label, plans: byKey.get(c.key)! })
+        byKey.delete(c.key)
+      }
+    }
+    // Any categories not in the lookup, then "No category".
+    for (const [key, plans] of Array.from(byKey.entries())) {
+      if (key === '__none__') continue
+      ordered.push({ key, label: key, plans })
+    }
+    if (byKey.has('__none__')) ordered.push({ key: '__none__', label: 'No category', plans: byKey.get('__none__')! })
+    return ordered
+  }, [visible, lookups])
+
+  return (
+    <div className="space-y-4">
+      {/* Header + actions */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <FolderKanban className="h-5 w-5 text-muted-foreground" />
+          <h1 className="text-xl font-semibold">Projects</h1>
+        </div>
+        <div className="flex-1" />
+        {isEditor && (
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm">
+              <Link href="/tracker/plans/new">New project</Link>
+            </Button>
+            <Button size="sm" variant="outline" disabled title="Coming soon">
+              Import
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1 rounded-md border p-0.5" role="tablist" aria-label="Filter projects">
+          {(['active', 'attention', 'all'] as Filter[]).map((f) => (
+            <button
+              key={f}
+              role="tab"
+              aria-selected={filter === f}
+              onClick={() => setFilter(f)}
+              className={cn(
+                'rounded px-3 py-1 text-sm font-medium transition-colors',
+                filter === f ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {f === 'active' ? 'Active' : f === 'attention' ? 'Needs attention' : 'All'}
+            </button>
+          ))}
+        </div>
+        {isEditor && (
+          <div className="min-w-[160px]">
+            <ToggleSwitch
+              checked={showArchived}
+              onCheckedChange={setShowArchived}
+              label="Show archived"
+            />
+          </div>
+        )}
+      </div>
+
+      {visible.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No projects to show.</p>
+      ) : (
+        <div className="space-y-6">
+          {groups.map((g) => (
+            <section key={g.key} aria-label={g.label} className="space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                {g.label}
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {g.plans.map((p) => (
+                  <PlanCard key={p.id} plan={p} lookups={lookups} today={today} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PlanCard({ plan, lookups, today }: { plan: PlanListItem; lookups: Lookups; today: string }) {
+  const statusLabel = lookupLabel(lookups, 'status', plan.status)
+  const regionLabel = lookupLabel(lookups, 'region', plan.region)
+  const phaseLabel = plan.phase ?? ''
+
+  const flags: { text: string; tone: 'error' | 'warning' | 'secondary' }[] = []
+  if (plan.flagOverdueAction) flags.push({ text: 'Overdue action', tone: 'error' })
+  if (plan.flagNoOpenAction) flags.push({ text: 'No next action', tone: 'warning' })
+  if (plan.flagStale && plan.lastUpdated) {
+    flags.push({ text: `No update for ${daysBetweenISO(plan.lastUpdated, today)} days`, tone: 'warning' })
+  }
+  if (plan.flagStatus && statusLabel) flags.push({ text: statusLabel, tone: 'warning' })
+
+  const pct = plan.nextMilestonePct ?? 0
+
+  return (
+    <div className="flex h-full flex-col gap-2 rounded-xl border bg-card p-4 text-card-foreground shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        {statusLabel && <Badge variant="secondary">{statusLabel}</Badge>}
+        {regionLabel && <span>{regionLabel}</span>}
+        {phaseLabel && <span>· {phaseLabel}</span>}
+        {plan.archived && <Badge variant="outline">Archived</Badge>}
+      </div>
+
+      <Link
+        href={`/tracker/plans/${plan.id}`}
+        className="text-base font-semibold leading-snug hover:underline"
+      >
+        {plan.name}
+      </Link>
+
+      {plan.client && <p className="text-sm text-muted-foreground">{plan.client}</p>}
+
+      {plan.subPlans > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {plan.subPlans} sub-project{plan.subPlans === 1 ? '' : 's'}
+        </p>
+      )}
+
+      <div className="mt-1 space-y-1 text-sm">
+        <div>
+          <span className="text-muted-foreground">Next action: </span>
+          {plan.nextActionTitle ? (
+            <span>
+              {plan.nextActionTitle}
+              {plan.nextActionDue && (
+                <span className="text-muted-foreground"> · due {formatDate(plan.nextActionDue)}</span>
+              )}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </div>
+
+        {plan.nextMilestoneTitle && (
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate">
+                <span className="text-muted-foreground">Milestone: </span>
+                {plan.nextMilestoneTitle}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {plan.nextMilestoneDone} of {plan.nextMilestoneTotal} · {pct}%
+              </span>
+            </div>
+            <Progress value={pct} className="mt-1" />
+          </div>
+        )}
+      </div>
+
+      <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-xs text-muted-foreground">
+        <span>{plan.openActions} open action{plan.openActions === 1 ? '' : 's'}</span>
+        {plan.lastUpdated && <span>Updated {formatDate(plan.lastUpdated)}</span>}
+      </div>
+
+      {flags.length > 0 && (
+        <div className="flex flex-wrap gap-1 pt-1">
+          {flags.map((f, i) => (
+            <Badge key={i} variant={f.tone === 'error' ? 'error' : f.tone === 'warning' ? 'warning' : 'secondary'}>
+              {f.text}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

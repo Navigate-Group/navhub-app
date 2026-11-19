@@ -26,6 +26,7 @@ import {
   MessageSquarePlus,
   LineChart,
   Repeat,
+  FolderKanban,
 } from 'lucide-react'
 import { signOut } from '@/app/(auth)/actions'
 import GroupSwitcherModal from './GroupSwitcherModal'
@@ -284,12 +285,13 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
             <NavLink href="/home" label="Home" Icon={Home} mobile={mobile} />
 
             {/* ── Core ── */}
-            {(show('agents') || show('documents') || show('reports')) && (
-              <NavSectionLabel label="Core" mobile={mobile} />
-            )}
-            {show('agents')    && <NavLink href="/agents"         label="Agents"    Icon={Bot}       mobile={mobile} />}
-            {show('documents') && <NavLink href="/documents"      label="Documents" Icon={FileText}  mobile={mobile} />}
-            {show('reports')   && <NavLink href="/reports/custom" label="Reports"   Icon={BarChart2} mobile={mobile} />}
+            {/* Projects (tracker) is shown to every member of the current
+                group, so the Core section always renders. */}
+            <NavSectionLabel label="Core" mobile={mobile} />
+            {show('agents')    && <NavLink href="/agents"         label="Agents"    Icon={Bot}          mobile={mobile} />}
+            <NavLink href="/tracker/plans" label="Projects" Icon={FolderKanban} mobile={mobile} />
+            {show('documents') && <NavLink href="/documents"      label="Documents" Icon={FileText}     mobile={mobile} />}
+            {show('reports')   && <NavLink href="/reports/custom" label="Reports"   Icon={BarChart2}    mobile={mobile} />}
 
             {/* ── Data ── */}
             {(show('financials') || show('reports') || show('marketing') || showMarkets) && (
