@@ -51,5 +51,5 @@ export function strArray(v: unknown): string[] | null {
       if (t) out.add(t)
     }
   }
-  return [...out]
+  return Array.from(out)
 }
