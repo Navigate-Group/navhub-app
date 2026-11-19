@@ -67,7 +67,7 @@ BEGIN
   SELECT count(*) INTO cnt FROM tracker_settings WHERE group_id = g1;
   IF cnt <> 1 THEN RAISE EXCEPTION 'Expected 1 settings row, got %', cnt; END IF;
   SELECT count(DISTINCT list) INTO cnt FROM tracker_lookups WHERE group_id = g1;
-  IF cnt <> 7 THEN RAISE EXCEPTION 'Expected 7 lookup lists seeded, got %', cnt; END IF;
+  IF cnt <> 6 THEN RAISE EXCEPTION 'Expected 6 lookup lists seeded (region starts empty, 081), got %', cnt; END IF;
 
   -- ── Bug 1. Action inserts succeed (stamp trigger must not set created_at) ──
   INSERT INTO tracker_project_plans (group_id, name, owner_id)
@@ -133,7 +133,7 @@ BEGIN
   SELECT count(*) INTO cnt FROM tracker_activity_log WHERE group_id = g1;
   IF cnt <> 0 THEN RAISE EXCEPTION 'activity_log not cascaded on group delete (% left)', cnt; END IF;
 
-  RAISE NOTICE 'ALL TRACKER P1 CORRECTION TESTS PASSED';
+  RAISE WARNING 'ALL TRACKER P1 CORRECTION TESTS PASSED';
 END $$;
 
 ROLLBACK;
