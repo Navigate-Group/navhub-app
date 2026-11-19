@@ -54,6 +54,7 @@ export default async function NewPlanPage() {
     progress_pct: 0,
     owner_id: userId, // default the creator
     lead_id: '',
+    member_ids: [],
   }
 
   return (
@@ -73,6 +74,7 @@ export default async function NewPlanPage() {
           people={peopleOptions}
           managers={managers}
           isEditor={editor}
+          canEditMembers={editor}
         />
       </CardContent>
     </Card>

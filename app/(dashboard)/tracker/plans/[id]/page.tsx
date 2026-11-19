@@ -16,6 +16,13 @@ import { Badge } from '@/components/ui/badge'
 import PlanStatusSelect from '@/components/tracker/PlanStatusSelect'
 import LogUpdateForm from '@/components/tracker/LogUpdateForm'
 import PlanActions from '@/components/tracker/PlanActions'
+import PlanHistory from '@/components/tracker/PlanHistory'
+import {
+  toHistoryItem,
+  type ActivityLogRow,
+  type HistoryContext,
+} from '@/lib/tracker/history'
+import { DEFAULT_SETTINGS } from '@/lib/tracker/domain'
 
 export const dynamic = 'force-dynamic'
 
@@ -120,6 +127,46 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
     .select('user_id, role')
     .eq('plan_id', planId)
 
+  // Today in the group's time zone (FR-1.6 fix): the Log update form must
+  // default to the group's today, not the UTC date (between midnight and 8 am
+  // Perth the UTC date is still yesterday). Same helper the list page uses.
+  const { data: todayVal } = await supabase.rpc('tracker_today', { p_group_id: groupId })
+  const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
+
+  // Group time zone (for History timestamps). Default when unset.
+  const { data: settingsRow } = await supabase
+    .from('tracker_settings')
+    .select('time_zone')
+    .eq('group_id', groupId)
+    .maybeSingle()
+  const timeZone = (settingsRow?.time_zone as string | null) ?? DEFAULT_SETTINGS.timeZone
+
+  // Activity log for this plan (newest first) — the Latest-activity line and
+  // the History card. RLS scopes this to what the reader may see.
+  const { data: activityRows } = await supabase
+    .from('tracker_activity_log')
+    .select('id, actor_id, entity_type, entity_id, verb, diff, created_at')
+    .eq('plan_id', planId)
+    .order('created_at', { ascending: false })
+
+  // Current milestone/action titles (incl. archived) so an update's sentence can
+  // name the item — the diff only carries the changed columns.
+  const [{ data: allMilestones }, { data: allActions }] = await Promise.all([
+    supabase.from('tracker_milestones').select('id, title').eq('plan_id', planId),
+    supabase.from('tracker_actions').select('id, title').eq('plan_id', planId),
+  ])
+  const titleById: Record<string, string> = {}
+  for (const m of allMilestones ?? []) titleById[m.id as string] = (m.title as string) ?? ''
+  for (const a of allActions ?? []) titleById[a.id as string] = (a.title as string) ?? ''
+  const contactNameById: Record<string, string> = {}
+  for (const c of contacts) contactNameById[c.id] = c.name
+
+  const historyCtx: HistoryContext = { names, lookups, titleById, contactNameById, timeZone }
+  const historyItems = ((activityRows ?? []) as unknown as ActivityLogRow[]).map((r) =>
+    toHistoryItem(r, historyCtx),
+  )
+  const latestActivity = historyItems[0] ?? null
+
   const sourceOptions = (lookups.source ?? []).map((s) => ({ key: s.key, label: s.label }))
   const statusOptions = (lookups.status ?? []).map((s) => ({ key: s.key, label: s.label }))
 
@@ -189,6 +236,11 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
         <p className="text-xs text-muted-foreground">
           Last updated by {lastUpdatedBy || '—'} · {formatDateTime(plan.updated_at as string)}
         </p>
+        {latestActivity && (
+          <p className="text-xs text-muted-foreground">
+            Latest activity: {latestActivity.who} {latestActivity.what} · {latestActivity.when}
+          </p>
+        )}
       </div>
 
       {/* Summary */}
@@ -284,7 +336,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
       <Section title="Update log">
         {canEdit && (
           <div className="mb-4">
-            <LogUpdateForm planId={planId} sourceOptions={sourceOptions} today={new Date().toISOString().slice(0, 10)} />
+            <LogUpdateForm planId={planId} sourceOptions={sourceOptions} today={today} />
           </div>
         )}
         {sortedUpdates.length === 0 ? (
@@ -305,6 +357,9 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
           </ul>
         )}
       </Section>
+
+      {/* History (FR-1.5) */}
+      <PlanHistory items={historyItems} />
 
       {/* Contacts */}
       {contacts.length > 0 && (

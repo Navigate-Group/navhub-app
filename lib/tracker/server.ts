@@ -155,3 +155,53 @@ export function nameMap(people: GroupPerson[]): Record<string, string> {
   for (const p of people) out[p.id] = p.name || '—'
   return out
 }
+
+/**
+ * Apply a project's chosen member list (FR-2.1): insert the added, delete the
+ * removed, as role = 'member' rows in tracker_plan_members. Runs as the signed-
+ * in user through the server client, so migration 082's RLS (only Managers /
+ * Group Owners may write) decides; a refusal surfaces as a PostgrestError.
+ *
+ * The lead stays in tracker_project_plans.lead_id — the lead row (role =
+ * 'lead') and any other non-'member' rows are left untouched here. Returns an
+ * error string on failure, or null on success.
+ */
+export async function applyPlanMembers(
+  supabase: SupabaseClient,
+  planId: string,
+  desiredMemberIds: string[],
+): Promise<string | null> {
+  // Current 'member' rows for this plan.
+  const { data: current, error: readErr } = await supabase
+    .from('tracker_plan_members')
+    .select('user_id')
+    .eq('plan_id', planId)
+    .eq('role', 'member')
+
+  if (readErr) return readErr.message
+
+  const existing = new Set((current ?? []).map((r) => r.user_id as string))
+  const desired = new Set(desiredMemberIds.filter(Boolean))
+
+  const toAdd = [...desired].filter((id) => !existing.has(id))
+  const toRemove = [...existing].filter((id) => !desired.has(id))
+
+  if (toAdd.length > 0) {
+    const { error } = await supabase
+      .from('tracker_plan_members')
+      .insert(toAdd.map((user_id) => ({ plan_id: planId, user_id, role: 'member' })))
+    if (error) return error.message
+  }
+
+  for (const user_id of toRemove) {
+    const { error } = await supabase
+      .from('tracker_plan_members')
+      .delete()
+      .eq('plan_id', planId)
+      .eq('user_id', user_id)
+      .eq('role', 'member')
+    if (error) return error.message
+  }
+
+  return null
+}

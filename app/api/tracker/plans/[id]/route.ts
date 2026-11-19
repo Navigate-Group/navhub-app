@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getTrackerContext } from '@/lib/tracker/server'
-import { writeErrorResponse, strOrNull, intInRange } from '@/lib/tracker/api'
+import { getTrackerContext, applyPlanMembers } from '@/lib/tracker/server'
+import { writeErrorResponse, strOrNull, intInRange, strArray } from '@/lib/tracker/api'
 
 // PATCH /api/tracker/plans/[id] — update a plan.
 // Body variants:
@@ -61,26 +61,49 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if ('progress_pct' in body) patch.progress_pct = intInRange(body.progress_pct, 0, 100) ?? 0
   }
 
-  if (Object.keys(patch).length === 0) {
+  // Members (FR-2.1): only present on a full edit and only when the form let the
+  // caller change them. Managers/Group Owners only; the database refuses others.
+  const memberIds = typeof body.archive === 'boolean' ? null : strArray(body.member_ids)
+
+  if (Object.keys(patch).length === 0 && memberIds === null) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
   }
 
-  const { data, error } = await supabase
-    .from('tracker_project_plans')
-    .update(patch)
-    .eq('id', planId)
-    .select('id')
+  // Update the plan's own columns (skip when this is a members-only change).
+  if (Object.keys(patch).length > 0) {
+    const { data, error } = await supabase
+      .from('tracker_project_plans')
+      .update(patch)
+      .eq('id', planId)
+      .select('id')
 
-  if (error) return writeErrorResponse(error)
-  // An empty result means RLS blocked the update (the row was invisible or not
-  // editable to this user).
-  if (!data || data.length === 0) {
-    return NextResponse.json(
-      { error: "You don't have permission to change this project" },
-      { status: 403 },
-    )
+    if (error) return writeErrorResponse(error)
+    // An empty result means RLS blocked the update (the row was invisible or not
+    // editable to this user).
+    if (!data || data.length === 0) {
+      return NextResponse.json(
+        { error: "You don't have permission to change this project" },
+        { status: 403 },
+      )
+    }
   }
-  return NextResponse.json({ data: data[0] })
+
+  // Write the member difference (insert added, delete removed). A DB refusal
+  // surfaces as a 403 so a non-Manager can't change members.
+  if (memberIds !== null) {
+    const memberErr = await applyPlanMembers(supabase, planId, memberIds)
+    if (memberErr) {
+      if (/row-level security|42501|permission/i.test(memberErr)) {
+        return NextResponse.json(
+          { error: "You don't have permission to change this project's members" },
+          { status: 403 },
+        )
+      }
+      return NextResponse.json({ error: memberErr }, { status: 400 })
+    }
+  }
+
+  return NextResponse.json({ data: { id: planId } })
 }
 
 // DELETE /api/tracker/plans/[id] — permanently delete a plan.

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getTrackerContext } from '@/lib/tracker/server'
-import { writeErrorResponse, strOrNull, intInRange } from '@/lib/tracker/api'
+import { getTrackerContext, applyPlanMembers } from '@/lib/tracker/server'
+import { writeErrorResponse, strOrNull, intInRange, strArray } from '@/lib/tracker/api'
 
 // POST /api/tracker/plans — create a project plan.
 // All guards (editor-only create, owner must be a Manager/Group Owner, lead
@@ -53,5 +53,20 @@ export async function POST(request: Request) {
     .single()
 
   if (error) return writeErrorResponse(error)
+
+  // Members (FR-2.1): write the chosen 'member' rows. Only Managers/Group
+  // Owners may; the database refuses otherwise. member_ids is only present
+  // when the form allowed editing it.
+  const memberIds = strArray(body.member_ids)
+  if (memberIds && data?.id) {
+    const memberErr = await applyPlanMembers(supabase, data.id as string, memberIds)
+    if (memberErr) {
+      return NextResponse.json(
+        { data, warning: 'The project was created, but its members could not be saved.' },
+        { status: 201 },
+      )
+    }
+  }
+
   return NextResponse.json({ data }, { status: 201 })
 }
