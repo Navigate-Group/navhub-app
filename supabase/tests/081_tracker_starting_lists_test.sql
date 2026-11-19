@@ -42,14 +42,12 @@ BEGIN
     AND list = 'milestone_status' AND key = 'in_progress' AND label = 'In progress';
   IF NOT FOUND THEN RAISE EXCEPTION '3: milestone in_progress label wrong'; END IF;
 
-  -- 4. One settings row; RLS still on for all 14 tables with no policies.
+  -- 4. One settings row; RLS still on for all 14 tables.
   SELECT count(*) INTO cnt FROM tracker_settings WHERE group_id = g1;
   IF cnt <> 1 THEN RAISE EXCEPTION '4: expected 1 settings row, got %', cnt; END IF;
   SELECT count(*) INTO cnt FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relname LIKE 'tracker\_%' AND c.relkind = 'r' AND c.relrowsecurity;
   IF cnt <> 14 THEN RAISE EXCEPTION '4: RLS on % tracker tables, expected 14', cnt; END IF;
-  SELECT count(*) INTO cnt FROM pg_policies WHERE schemaname = 'public' AND tablename LIKE 'tracker\_%';
-  IF cnt <> 0 THEN RAISE EXCEPTION '4: expected no tracker policies, found %', cnt; END IF;
 
   RAISE WARNING 'ALL TRACKER STARTING LIST TESTS PASSED';
 END $$;

@@ -169,6 +169,36 @@ would fail and block the group deletion).
 
 ## Row-level security
 
-RLS is **ENABLED on all 14 tables with NO policies** in P1 — the module is fully
-locked to anon/authenticated callers (service role bypasses RLS). **Access rules
-land in P2**; everything is blocked until then.
+RLS is **ENABLED on all 14 tables** (079). In P1 it ships with **no policies** —
+the module is fully locked to anon/authenticated callers (service role bypasses
+RLS). **Access rules land in P2** (see below).
+
+## Access rules (P2, migration 082)
+
+Migration `supabase/migrations/082_tracker_access_rules.sql` adds the row-level
+security policies and guards for all 14 `tracker_*` tables, so access is enforced
+by the database, not the app. Base access comes from the person's **current
+NavHub role in the group** (`user_groups.role`, never copied into tracker
+tables); removing someone from the group ends all their access at once.
+
+| Who (NavHub role in the group) | In the group's tracker |
+|---|---|
+| Manager, Group Owner | Full: read and edit every project, create projects, give project access, settings, archive; the plan's owner deletes permanently |
+| Any other member (Staff, Group Admin, Super Admin, Viewer, …) | Read every project. Plus Comment or Edit on the specific projects a Manager / Group Owner gives them access to |
+| An action's assignee | May also change that action's status and due date |
+| Not a member of the group | Nothing |
+
+- Access to a project includes all its sub-projects. Access to a sub-project
+  alone does not open its parent.
+- Weekly reviews are private to their owner. Nobody edits the activity log.
+- Roles are read live from `user_groups`; removing someone from the group ends
+  all their access at once.
+- Two deliberate changes from the original spec: project access can go to any
+  non-editor member of the group (not only Staff), and access to a project
+  includes its sub-projects.
+
+Policies apply to the `authenticated` role only (anon sees nothing). The migration
+also makes `tracker_init_group` editor-only, runs the activity-log and
+last-updated triggers as the owner (so they bypass RLS), and adds guards for the
+column-level rules RLS cannot express (plan owner/archive, assignee-only columns
+on actions, comment authorship, project-access level).

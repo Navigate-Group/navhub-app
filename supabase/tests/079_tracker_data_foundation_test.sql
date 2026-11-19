@@ -50,18 +50,12 @@ BEGIN
     RAISE EXCEPTION 'Expected % tracker tables, found %', expected_count, cnt;
   END IF;
 
-  -- ── 2. RLS enabled on all 14, with NO policies (P1) ───────────────────────
+  -- ── 2. RLS enabled on all 14 (access policies are added in P2) ─
   SELECT count(*) INTO cnt
   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = 'public' AND c.relname = ANY(tbls) AND c.relrowsecurity;
   IF cnt <> expected_count THEN
     RAISE EXCEPTION 'Expected RLS enabled on % tables, found %', expected_count, cnt;
-  END IF;
-
-  SELECT count(*) INTO cnt FROM pg_policies
-  WHERE schemaname = 'public' AND tablename = ANY(tbls);
-  IF cnt <> 0 THEN
-    RAISE EXCEPTION 'Expected 0 tracker policies in P1, found %', cnt;
   END IF;
 
   -- ── 3. Key columns / types spot-check ─────────────────────────────────────
@@ -117,7 +111,7 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'settings defaults incorrect'; END IF;
 
   SELECT count(DISTINCT list) INTO cnt FROM tracker_lookups WHERE group_id = g1;
-  IF cnt <> 7 THEN RAISE EXCEPTION 'Expected 7 lookup lists seeded, got %', cnt; END IF;
+  IF cnt <> 6 THEN RAISE EXCEPTION 'Expected 6 lookup lists seeded (region starts empty, 081), got %', cnt; END IF;
 
   -- ── 6. Plan insert + owner required / stamp defaults ──────────────────────
   INSERT INTO tracker_project_plans (group_id, name, owner_id)
@@ -225,7 +219,7 @@ BEGIN
   SELECT count(*) INTO cnt FROM tracker_lookups WHERE group_id = g2;
   IF cnt <> 0 THEN RAISE EXCEPTION 'g2 should have no lookups before init, got %', cnt; END IF;
 
-  RAISE NOTICE 'ALL TRACKER P1 DATABASE TESTS PASSED';
+  RAISE WARNING 'ALL TRACKER P1 DATABASE TESTS PASSED';
 END $$;
 
 ROLLBACK;
