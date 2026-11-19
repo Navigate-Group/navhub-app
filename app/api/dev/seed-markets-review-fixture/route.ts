@@ -22,7 +22,7 @@ export const runtime = 'nodejs'
  *
  * Super-admin only, and returns 404 in production.
  */
-export async function POST(req: Request) {
+export async function POST() {
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }

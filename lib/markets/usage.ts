@@ -298,7 +298,7 @@ export async function buildUsageReport(windowDays: number | null = 30): Promise<
 
   const alertFloor = cap > 0 ? (cap * alertThresholdPct) / 100 : Infinity
   let alertingUsers = 0
-  for (const row of byUser.values()) {
+  for (const row of Array.from(byUser.values())) {
     row.email = emailById.get(row.userId) || row.userId
     row.totalTokens = row.marketAnalystTokens + row.documentExtractorTokens
     row.overCap = cap > 0 && row.tokensToday >= cap
