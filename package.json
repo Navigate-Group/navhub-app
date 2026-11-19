@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:markets": "node --test --experimental-strip-types --loader ./lib/markets/ts-ext-loader.mjs lib/markets/compute.test.ts lib/markets/explorer.test.ts lib/markets/analyst.test.ts lib/markets/audit.test.ts lib/markets/review.test.ts lib/markets/review-queue.test.ts lib/markets/settings.test.ts"
+    "test:markets": "node --test --experimental-strip-types --loader ./lib/markets/ts-ext-loader.mjs lib/markets/compute.test.ts lib/markets/explorer.test.ts lib/markets/analyst.test.ts lib/markets/audit.test.ts lib/markets/review.test.ts lib/markets/review-queue.test.ts lib/markets/settings.test.ts",
+    "test:tracker": "node --test --experimental-strip-types lib/tracker/domain.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",

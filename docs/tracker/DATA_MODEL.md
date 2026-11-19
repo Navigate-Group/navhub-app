@@ -202,3 +202,45 @@ also makes `tracker_init_group` editor-only, runs the activity-log and
 last-updated triggers as the owner (so they bypass RLS), and adds guards for the
 column-level rules RLS cannot express (plan owner/archive, assignee-only columns
 on actions, comment authorship, project-access level).
+
+## Calculated views and business rules (P3, migration 083)
+
+Migration `supabase/migrations/083_tracker_views.sql` adds five read-only,
+`security_invoker` views that give every future screen its numbers (so each
+view returns only the rows the reader may see under the P2 access rules), plus
+the date/time helpers `tracker_today(group_id)` and
+`tracker_week_start(day, week_start)`:
+
+| View | One row per | What it gives |
+|---|---|---|
+| `tracker_v_plan_attention` | non-archived plan | open-action count, sub-plans, next action, last updated, the four attention flags, and `needs_attention` |
+| `tracker_v_milestone_progress` | non-archived milestone | done/total actions, progress %, days slipped, overdue |
+| `tracker_v_action_counts` | person per group | the six My week tiles (overdue, due this week, waiting on others, calls & emails, plans needing attention, closed this week) |
+| `tracker_v_closed_per_week` | person per ISO week | actions closed that week |
+| `tracker_v_health_checks` | person per group | the five weekly-review checks with their offending ids |
+
+The agreed rules (the source of truth for both the views and the TypeScript):
+
+- **Today** is in the group's time zone (`tracker_settings.time_zone`, default
+  `Australia/Perth`); weeks start on the group's `week_start` (`monday` |
+  `sunday`).
+- **Archived plans and actions are ignored**, and so are actions on an archived
+  plan. A plan is **active** unless its status is `finished`.
+- **Open action** = status `open` or `waiting`. **Next action** = the
+  earliest-due action with status `open` (undated last; then `created_on`, then
+  `id`). **Overdue action** = status `open` and due before today.
+- A plan **needs attention** (active plans only) when its status is `at_risk`,
+  `blocked` or `needs_status_check`; or it has no open action; or it has an
+  overdue action; or `today − last updated >= stale_days`. **Last updated** =
+  the later of the plan's `updated_on` and its newest update. A parent counts
+  the actions of all its sub-plans.
+- **Waiting too long** = status `waiting` and `today − waiting_since >
+  chaser_days`.
+- **"My" plans** (tiles, health checks) = active plans I own or lead.
+
+`lib/tracker/domain.ts` holds the **same rules** as pure TypeScript for the
+screens and **must stay in step with the views** — change a rule in one place
+and it must change in the other. Both are checked against one shared fixture
+(`npm run test:tracker` and `supabase/tests/083_tracker_views_test.sql`), which
+must produce identical numbers (SRS AC-4). Requires migrations 079–082; adds
+only `tracker_*` objects and is safe to re-run.
