@@ -1,17 +1,23 @@
 # Tracker — Data Model (condensed)
 
 The canonical data model for the Project Tracker, as implemented by migration
-`supabase/migrations/079_tracker_data_foundation.sql` (P1). Later phases build
-on this; keep it in sync with the migration.
+`supabase/migrations/079_tracker_data_foundation.sql` (P1) and corrected by
+`supabase/migrations/080_tracker_p1_corrections.sql` (P1 follow-up — fixes five
+bugs found testing on a real Postgres 17 DB; see the **P1 corrections** note
+below). Later phases build on this; keep it in sync with both migrations.
 
 > **Migration number note:** the originating brief suggested `073`, but `073`
-> through `078` were already taken (Markets). The foundation ships as `079`.
+> through `078` were already taken (Markets). The foundation ships as `079`;
+> the corrections ship as `080`.
 
 ## Conventions
 
 - `group_id uuid NOT NULL → groups(id) ON DELETE CASCADE` on every group-scoped table.
 - Person columns → `auth.users(id) ON DELETE SET NULL`, **except**
-  `tracker_project_plans.owner_id`: `NOT NULL`, `ON DELETE RESTRICT`.
+  `tracker_project_plans.owner_id` (`NOT NULL`, `ON DELETE RESTRICT`) and the
+  NOT-NULL / PK `user_id` columns on `tracker_plan_members`,
+  `tracker_plan_shares` and `tracker_reviews` (`ON DELETE CASCADE` — 080; a
+  SET-NULL there would violate NOT NULL / the PK and block user deletion).
 - Primary keys: `uuid PRIMARY KEY DEFAULT gen_random_uuid()` (unless a composite PK is stated).
 - `"today"` = `(now() AT TIME ZONE 'Australia/Perth')::date`.
 - Composite FKs `(x_id, group_id) → parent(id, group_id)` enforce **same-group-only** references.
@@ -49,14 +55,15 @@ action_type, source, region, review_step)`; `key text NN`; `label text NN`;
 `created_at`, `updated_at` timestamptz NN now(); `updated_on date NN today`;
 `archived_at` null.
 **UNIQUE(id, group_id)**; **UNIQUE(group_id, legacy_id) WHERE legacy_id IS NOT NULL**;
-FK `(parent_id, group_id) → (id, group_id)` ON DELETE SET NULL; **CHECK `parent_id <> id`**.
+FK `(parent_id, group_id) → (id, group_id)` **ON DELETE SET NULL (parent_id)**
+(080 — clears only `parent_id`, never `group_id`); **CHECK `parent_id <> id`**.
 
 ### `tracker_plan_members`
-`plan_id NN → plans CASCADE`; `user_id NN`; `role text NN CHECK IN (lead, member)`.
+`plan_id NN → plans CASCADE`; `user_id NN → users CASCADE` (080); `role text NN CHECK IN (lead, member)`.
 **PK(plan_id, user_id)**.
 
 ### `tracker_plan_shares`
-`id`; `plan_id NN → plans CASCADE`; `user_id NN`; `level tracker_share_level NN`;
+`id`; `plan_id NN → plans CASCADE`; `user_id NN → users CASCADE` (080); `level tracker_share_level NN`;
 `shared_by null`; `created_at NN now()`. **UNIQUE(plan_id, user_id)**.
 
 ### `tracker_milestones`
@@ -100,7 +107,7 @@ FK `(contact_id, group_id) → contacts CASCADE`; FK `(plan_id, group_id) → pl
 `author_id null`; `body text NN`; `created_at NN now()`; `edited_at`, `deleted_at` null.
 
 ### `tracker_reviews`
-`group_id`; `user_id NN`; `iso_week text NN CHECK '^[0-9]{4}-W[0-9]{2}$'`;
+`group_id`; `user_id NN → users CASCADE` (080); `iso_week text NN CHECK '^[0-9]{4}-W[0-9]{2}$'`;
 `checks jsonb NN '{}'`; `top3`, `notes` text null; `updated_at NN now()`.
 **PK(group_id, user_id, iso_week)**.
 
@@ -123,7 +130,8 @@ actions, updates, contact_plans, comments; `(milestone_id, group_id)` on actions
 
 ## `tracker_init_group(group_id uuid) → void`
 
-Idempotent per-group bootstrap (all inserts `ON CONFLICT DO NOTHING`):
+Idempotent per-group bootstrap, **`SECURITY DEFINER` with `SET search_path =
+public, pg_temp`** (080), all inserts `ON CONFLICT DO NOTHING`:
 
 - Creates the `tracker_settings` row with defaults (chaser 5, stale 21,
   contact_followup 21, review_day friday, week_start monday, tz Australia/Perth).
@@ -136,6 +144,9 @@ Idempotent per-group bootstrap (all inserts `ON CONFLICT DO NOTHING`):
 On plans, milestones, actions, contacts, updates:
 - INSERT: set `created_by` (or `author_id` for updates) = `auth.uid()` when null;
   set the created-timestamp. Passed values are kept when `auth.uid()` is null.
+  **`tracker_actions` has no `created_at`/`updated_at` (it carries `created_on`,
+  a date, with its own default), so the trigger does not stamp timestamps on it**
+  (080 — the 079 version wrongly set `created_at` and broke every action insert).
 - UPDATE: set `updated_by` = `auth.uid()`, bump `updated_at` (`edited_at` for updates).
 - A plan change that **only** moves `updated_on` leaves `updated_by`/`updated_at` alone.
 
@@ -152,6 +163,9 @@ On every tracker table **except the log itself**. Logs `actor_id` (`auth.uid()`)
 `diff`: full new row (created), full old row (deleted), or changed columns
 `{col: {old, new}}` (updated). Skips redundant plan-only-`updated_on` changes.
 Denormalises `plan_id` (the plan's own id for plans; the row's `plan_id` otherwise).
+**Skips the log INSERT when the owning group no longer exists** (080 — i.e.
+during a group cascade-delete; otherwise the log's `group_id` FK to `groups`
+would fail and block the group deletion).
 
 ## Row-level security
 
