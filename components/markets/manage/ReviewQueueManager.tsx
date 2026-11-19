@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Loader2, RefreshCw, Check, X, Pencil, ChevronDown, ChevronRight,
   CheckCircle2, AlertTriangle, Search, FileText,
@@ -118,7 +118,7 @@ export default function ReviewQueueManager({ commodities, geographies, sources }
 
   useEffect(() => { void load() }, [load])
 
-  const entries = data?.entries ?? []
+  const entries = useMemo(() => data?.entries ?? [], [data])
   const counts = data?.counts ?? { pending: 0, approved: 0, rejected: 0 }
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1
 
