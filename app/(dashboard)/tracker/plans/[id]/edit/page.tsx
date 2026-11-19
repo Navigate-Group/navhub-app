@@ -56,6 +56,14 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
     .filter((p) => MANAGER_ROLES.includes(p.role))
     .map((p) => ({ id: p.id, name: p.name || '—' }))
 
+  // Current members (role = 'member'); the lead stays in lead_id.
+  const { data: memberRows } = await supabase
+    .from('tracker_plan_members')
+    .select('user_id, role')
+    .eq('plan_id', planId)
+    .eq('role', 'member')
+  const memberIds = (memberRows ?? []).map((m) => m.user_id as string)
+
   const initial: PlanFormValues = {
     name: (plan.name as string) ?? '',
     category: (plan.category as string | null) ?? '',
@@ -72,6 +80,7 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
     progress_pct: (plan.progress_pct as number | null) ?? 0,
     owner_id: (plan.owner_id as string | null) ?? '',
     lead_id: (plan.lead_id as string | null) ?? '',
+    member_ids: memberIds,
   }
 
   return (
@@ -92,6 +101,7 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
           people={peopleOptions}
           managers={managers}
           isEditor={editor}
+          canEditMembers={editor}
         />
       </CardContent>
     </Card>

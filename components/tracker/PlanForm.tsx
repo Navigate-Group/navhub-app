@@ -26,6 +26,8 @@ export type PlanFormValues = {
   progress_pct: number
   owner_id: string
   lead_id: string
+  /** Member user ids (role = 'member'). The lead is kept in lead_id. */
+  member_ids: string[]
 }
 
 const selectClass = cn(
@@ -50,6 +52,7 @@ export default function PlanForm({
   people,
   managers,
   isEditor,
+  canEditMembers = isEditor,
 }: {
   mode: 'new' | 'edit'
   planId?: string
@@ -62,6 +65,8 @@ export default function PlanForm({
   people: PlanFormPerson[]
   managers: PlanFormPerson[]
   isEditor: boolean
+  /** Only Managers/Group Owners can change members (the DB enforces too). */
+  canEditMembers?: boolean
 }) {
   const router = useRouter()
   const [v, setV] = useState<PlanFormValues>(initial)
@@ -97,6 +102,9 @@ export default function PlanForm({
     }
     // Only editors can set the owner; otherwise the server defaults it.
     if (isEditor) payload.owner_id = v.owner_id || null
+    // Only Managers/Group Owners can change members (the DB enforces too). When
+    // allowed, send the chosen member ids; the server writes the difference.
+    if (canEditMembers) payload.member_ids = v.member_ids
 
     try {
       const res =
@@ -232,6 +240,14 @@ export default function PlanForm({
         </div>
       </div>
 
+      {/* Members */}
+      <MembersField
+        memberIds={v.member_ids}
+        people={people}
+        canEdit={canEditMembers}
+        onChange={(ids) => set('member_ids', ids)}
+      />
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="flex gap-2">
@@ -239,5 +255,82 @@ export default function PlanForm({
         <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
       </div>
     </form>
+  )
+}
+
+/**
+ * The Members field: chosen members as removable chips plus an "Add a member…"
+ * picker of the other group members. Managers/Group Owners can change it; for
+ * everyone else the members show as plain text (the DB is the real guard).
+ */
+function MembersField({
+  memberIds,
+  people,
+  canEdit,
+  onChange,
+}: {
+  memberIds: string[]
+  people: PlanFormPerson[]
+  canEdit: boolean
+  onChange: (ids: string[]) => void
+}) {
+  const nameById = (id: string) => people.find((p) => p.id === id)?.name ?? '—'
+  const chosen = memberIds.filter((id) => people.some((p) => p.id === id))
+  const available = people.filter((p) => !memberIds.includes(p.id))
+
+  if (!canEdit) {
+    return (
+      <div className="space-y-1">
+        <Label>Members</Label>
+        <p className="text-sm">
+          {chosen.length === 0 ? '—' : chosen.map(nameById).join(', ')}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      <Label htmlFor="member-picker">Members</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        {chosen.map((id) => (
+          <span
+            key={id}
+            className="inline-flex items-center gap-1 rounded-full border bg-muted px-2 py-0.5 text-sm"
+          >
+            {nameById(id)}
+            <button
+              type="button"
+              onClick={() => onChange(memberIds.filter((m) => m !== id))}
+              aria-label={`Remove ${nameById(id)}`}
+              className="rounded-full px-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <select
+          id="member-picker"
+          className={cn(selectClass, 'h-9 w-auto min-w-[12rem]')}
+          value=""
+          onChange={(e) => {
+            const id = e.target.value
+            if (id && !memberIds.includes(id)) onChange([...memberIds, id])
+          }}
+          disabled={available.length === 0}
+          aria-label="Add a member"
+        >
+          <option value="">Add a member…</option>
+          {available.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The people working on this project. Being a member doesn&apos;t give edit
+        rights: that comes from the person&apos;s role or the project access a
+        Manager gives.
+      </p>
+    </div>
   )
 }

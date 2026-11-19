@@ -40,3 +40,16 @@ export function intInRange(v: unknown, min: number, max: number): number | null 
   if (!Number.isFinite(n)) return null
   return Math.max(min, Math.min(max, Math.round(n)))
 }
+
+/** A de-duplicated array of non-empty trimmed strings, or null when not an array. */
+export function strArray(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null
+  const out = new Set<string>()
+  for (const item of v) {
+    if (typeof item === 'string') {
+      const t = item.trim()
+      if (t) out.add(t)
+    }
+  }
+  return [...out]
+}
