@@ -20,10 +20,12 @@ export type ActionItem = {
   status: string
   priority: string | null
   milestone_id: string | null
+  contact_id: string | null
   notes: string | null
   waiting_since: string | null
   typeLabel: string
   assigneeName: string | null
+  contactName: string | null
   // Whether the signed-in user may use the quick buttons on this action
   // (full edit access, or they are the assignee).
   canQuick: boolean
@@ -48,6 +50,7 @@ export default function ActionsSection({
   priorities,
   people,
   milestones,
+  contacts,
 }: {
   planId: string
   actions: ActionItem[]
@@ -59,6 +62,7 @@ export default function ActionsSection({
   priorities: Option[]
   people: Person[]
   milestones: { id: string; title: string }[]
+  contacts: { id: string; name: string }[]
 }) {
   const router = useRouter()
   const [adding, setAdding] = useState(false)
@@ -114,6 +118,7 @@ export default function ActionsSection({
     status: 'open',
     priority: 'normal',
     milestone_id: '',
+    contact_id: '',
     notes: '',
   }
 
@@ -148,6 +153,7 @@ export default function ActionsSection({
                   <span className="text-muted-foreground">
                     {a.assigneeName || a.who || '—'}
                   </span>
+                  {a.contactName && <span className="text-muted-foreground">· {a.contactName}</span>}
                   {a.due_on && <span className="text-muted-foreground">due {formatDate(a.due_on)}</span>}
                   {a.status === 'waiting' && (
                     <span className={cn('text-xs', waitingTooLong ? 'font-medium text-red-600 dark:text-red-400' : 'text-muted-foreground')}>
@@ -201,6 +207,7 @@ export default function ActionsSection({
           priorities={priorities}
           people={people}
           milestones={milestones}
+          contacts={contacts}
         />
       )}
 
@@ -220,12 +227,14 @@ export default function ActionsSection({
             status: editing.status,
             priority: editing.priority ?? 'normal',
             milestone_id: editing.milestone_id ?? '',
+            contact_id: editing.contact_id ?? '',
             notes: editing.notes ?? '',
           }}
           types={types}
           priorities={priorities}
           people={people}
           milestones={milestones}
+          contacts={contacts}
         />
       )}
 

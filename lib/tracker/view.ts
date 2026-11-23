@@ -187,3 +187,23 @@ export function isFolderLink(folder: string | null | undefined): boolean {
   if (!folder) return false
   return /^https?:\/\//i.test(folder.trim())
 }
+
+/**
+ * A short, friendly "when posted" label for a timestamp (comments). "today",
+ * "yesterday", else "18 Nov" (or "18 Nov 2024" for a different year). `now`
+ * lets callers pin the reference time for tests.
+ */
+export function relativeWhen(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return ''
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return iso
+  const startOfDay = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(dt)) / 86_400_000)
+  if (dayDiff === 0) return 'today'
+  if (dayDiff === 1) return 'yesterday'
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const sameYear = dt.getFullYear() === now.getFullYear()
+  return sameYear
+    ? `${dt.getDate()} ${months[dt.getMonth()]}`
+    : `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear()}`
+}

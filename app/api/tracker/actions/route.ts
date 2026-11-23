@@ -36,6 +36,7 @@ export async function POST(request: Request) {
     status: status === 'waiting' || status === 'done' ? status : 'open',
     priority: strOrNull(body.priority) ?? 'normal',
     milestone_id: strOrNull(body.milestone_id),
+    contact_id: strOrNull(body.contact_id),
     notes: strOrNull(body.notes),
   }
 
