@@ -104,8 +104,8 @@ export default function PlansList({
             <Button asChild size="sm">
               <Link href="/tracker/plans/new">New project</Link>
             </Button>
-            <Button size="sm" variant="outline" disabled title="Coming soon">
-              Import
+            <Button asChild size="sm" variant="outline">
+              <Link href="/tracker/plans/import">Import</Link>
             </Button>
           </div>
         )}
