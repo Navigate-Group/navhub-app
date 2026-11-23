@@ -16,9 +16,18 @@ export default async function TrackerLayout({ children }: { children: React.Reac
 
   const editor = await isEditor(ctx.supabase, ctx.groupId)
 
+  // Group name for the small grey line above the tabs (design spec). RLS-scoped
+  // read through the signed-in user's server client.
+  const { data: group } = await ctx.supabase
+    .from('groups')
+    .select('name')
+    .eq('id', ctx.groupId)
+    .maybeSingle()
+  const groupName = (group?.name as string | null) ?? null
+
   return (
     <div className="mx-auto max-w-6xl">
-      <TrackerTabs showSettings={editor} />
+      <TrackerTabs showSettings={editor} groupName={groupName} />
       {children}
     </div>
   )

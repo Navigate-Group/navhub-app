@@ -40,6 +40,54 @@ export function lookupLabel(lookups: Lookups, list: string, key: string | null |
   return lookups[list]?.find((o) => o.key === key)?.label ?? key
 }
 
+// ── Status colour mapping (design spec) ─────────────────────────────────────
+
+/**
+ * A project status colour tone, from the agreed design:
+ *   green  — On track, Wrapping up
+ *   amber  — At risk
+ *   red    — Blocked
+ *   blue   — Waiting on others
+ *   purple — Needs a status check
+ *   grey   — Proposal / pre-contract, Finished (and anything else)
+ */
+export type StatusTone = 'green' | 'amber' | 'red' | 'blue' | 'purple' | 'grey'
+
+const STATUS_TONES: Record<string, StatusTone> = {
+  on_track: 'green',
+  wrapping_up: 'green',
+  at_risk: 'amber',
+  blocked: 'red',
+  waiting_on_others: 'blue',
+  needs_status_check: 'purple',
+  proposal_pre_contract: 'grey',
+  finished: 'grey',
+}
+
+/** The colour tone for a project status key (grey for unknown/none). */
+export function statusTone(statusKey: string | null | undefined): StatusTone {
+  if (!statusKey) return 'grey'
+  return STATUS_TONES[statusKey] ?? 'grey'
+}
+
+/** Tailwind classes for a colour-coded status label, in light and dark mode. */
+export function statusLabelClasses(statusKey: string | null | undefined): string {
+  switch (statusTone(statusKey)) {
+    case 'green':
+      return 'border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+    case 'amber':
+      return 'border-transparent bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+    case 'red':
+      return 'border-transparent bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+    case 'blue':
+      return 'border-transparent bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+    case 'purple':
+      return 'border-transparent bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+    default:
+      return 'border-transparent bg-muted text-muted-foreground'
+  }
+}
+
 // ── Attention flags → short labels (FR-2.4) ─────────────────────────────────
 
 export type AttentionRow = {

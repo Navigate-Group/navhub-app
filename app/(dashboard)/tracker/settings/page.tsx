@@ -9,5 +9,10 @@ export default async function TrackerSettingsPage() {
   const ctx = await getTrackerContext()
   if (!ctx) redirect('/home')
   if (!(await isEditor(ctx.supabase, ctx.groupId))) redirect('/tracker/plans')
-  return <ComingSoon title="Settings" />
+  return (
+    <ComingSoon
+      title="Settings"
+      description="The tracker's lists, reminder days and time zone arrive in a later release."
+    />
+  )
 }

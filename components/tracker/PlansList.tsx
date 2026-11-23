@@ -13,6 +13,7 @@ import {
   formatDate,
   daysBetweenISO,
 } from '@/lib/tracker/view'
+import StatusLabel from '@/components/tracker/StatusLabel'
 import { cn } from '@/lib/utils'
 
 export type PlanListItem = {
@@ -138,16 +139,26 @@ export default function PlansList({
             />
           </div>
         )}
+        <span className="text-sm text-muted-foreground">
+          {visible.length} project{visible.length === 1 ? '' : 's'}
+        </span>
       </div>
 
       {visible.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No projects to show.</p>
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">No projects to show.</p>
+          {isEditor && (
+            <p className="text-sm text-muted-foreground">
+              Create one, or import from the previous tracker.
+            </p>
+          )}
+        </div>
       ) : (
         <div className="space-y-6">
           {groups.map((g) => (
             <section key={g.key} aria-label={g.label} className="space-y-3">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {g.label}
+                {g.label} · {g.plans.length} project{g.plans.length === 1 ? '' : 's'}
               </h2>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {g.plans.map((p) => (
@@ -167,20 +178,27 @@ function PlanCard({ plan, lookups, today }: { plan: PlanListItem; lookups: Looku
   const regionLabel = lookupLabel(lookups, 'region', plan.region)
   const phaseLabel = plan.phase ?? ''
 
-  const flags: { text: string; tone: 'error' | 'warning' | 'secondary' }[] = []
-  if (plan.flagOverdueAction) flags.push({ text: 'Overdue action', tone: 'error' })
-  if (plan.flagNoOpenAction) flags.push({ text: 'No next action', tone: 'warning' })
+  // Warnings shown in red (design spec): overdue action, no next action, no
+  // update for a while. The status itself is shown via the coloured status
+  // label above, so it is not repeated as a warning here.
+  const warnings: string[] = []
+  if (plan.flagOverdueAction) warnings.push('Overdue action')
+  if (plan.flagNoOpenAction) warnings.push('No next action')
   if (plan.flagStale && plan.lastUpdated) {
-    flags.push({ text: `No update for ${daysBetweenISO(plan.lastUpdated, today)} days`, tone: 'warning' })
+    warnings.push(`No update for ${daysBetweenISO(plan.lastUpdated, today)} days`)
   }
-  if (plan.flagStatus && statusLabel) flags.push({ text: statusLabel, tone: 'warning' })
 
   const pct = plan.nextMilestonePct ?? 0
 
   return (
-    <div className="flex h-full flex-col gap-2 rounded-xl border bg-card p-4 text-card-foreground shadow-sm">
+    <div
+      className={cn(
+        'flex h-full flex-col gap-2 rounded-xl border bg-card p-4 text-card-foreground shadow-sm',
+        plan.archived && 'opacity-60',
+      )}
+    >
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        {statusLabel && <Badge variant="secondary">{statusLabel}</Badge>}
+        <StatusLabel statusKey={plan.status} label={statusLabel} />
         {regionLabel && <span>{regionLabel}</span>}
         {phaseLabel && <span>· {phaseLabel}</span>}
         {plan.archived && <Badge variant="outline">Archived</Badge>}
@@ -237,11 +255,11 @@ function PlanCard({ plan, lookups, today }: { plan: PlanListItem; lookups: Looku
         {plan.lastUpdated && <span>Updated {formatDate(plan.lastUpdated)}</span>}
       </div>
 
-      {flags.length > 0 && (
+      {warnings.length > 0 && (
         <div className="flex flex-wrap gap-1 pt-1">
-          {flags.map((f, i) => (
-            <Badge key={i} variant={f.tone === 'error' ? 'error' : f.tone === 'warning' ? 'warning' : 'secondary'}>
-              {f.text}
+          {warnings.map((text, i) => (
+            <Badge key={i} variant="error">
+              {text}
             </Badge>
           ))}
         </div>

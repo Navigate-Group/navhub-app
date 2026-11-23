@@ -12,7 +12,7 @@ DECLARE
   g    uuid := '10000000-0000-0000-0000-000000000001';
   u1   uuid := '20000000-0000-0000-0000-000000000001';  -- manager (editor)
   u2   uuid := '20000000-0000-0000-0000-000000000002';  -- staff, the milestone owner
-  u3   uuid := '20000000-0000-0000-0000-000000000003';  -- staff, no edit, not the owner
+  u3   uuid := '20000000-0000-0000-0000-000000000003';  -- staff, edit access, not the owner
   p1   uuid := '30000000-0000-0000-0000-000000000001';
   mA   uuid := '40000000-0000-0000-0000-00000000000a';   -- baseline from due_on
   mB   uuid := '40000000-0000-0000-0000-00000000000b';   -- explicit baseline kept
@@ -31,6 +31,7 @@ BEGIN
   PERFORM tracker_init_group(g);
   INSERT INTO tracker_project_plans (id, group_id, name, owner_id, status)
     VALUES (p1, g, 'P1', u1, 'on_track');
+  INSERT INTO tracker_plan_shares (plan_id, user_id, level) VALUES (p1, u2, 'edit'), (p1, u3, 'edit');
 
   -- ── 1. Actions: done_on follows the status ────────────────────────────────
   INSERT INTO tracker_actions (id, group_id, plan_id, title, status)
