@@ -1,7 +1,8 @@
 import { notFound, redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import Link from 'next/link'
-import { getTrackerContext, isEditor, canAccess, getGroupPeople, nameMap } from '@/lib/tracker/server'
+import { getTrackerContext, isEditor, canAccess, getGroupPeople, nameMap, getTrackerHeaderData } from '@/lib/tracker/server'
+import TrackerHeader from '@/components/tracker/TrackerHeader'
 import {
   buildLookups,
   lookupLabel,
@@ -11,13 +12,14 @@ import {
   type LookupRow,
   type MilestoneProgressRow,
 } from '@/lib/tracker/view'
-import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import PlanStatusSelect from '@/components/tracker/PlanStatusSelect'
 import StatusLabel from '@/components/tracker/StatusLabel'
 import LogUpdateForm from '@/components/tracker/LogUpdateForm'
 import PlanActions from '@/components/tracker/PlanActions'
 import PlanHistory from '@/components/tracker/PlanHistory'
+import MilestonesSection, { type MilestoneItem } from '@/components/tracker/MilestonesSection'
+import ActionsSection, { type ActionItem } from '@/components/tracker/ActionsSection'
 import { cn } from '@/lib/utils'
 import {
   toHistoryItem,
@@ -44,9 +46,10 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
 
   if (!plan) notFound()
 
-  const [editor, canEdit] = await Promise.all([
+  const [editor, canEdit, header] = await Promise.all([
     isEditor(supabase, groupId),
     canAccess(supabase, planId, 'edit'),
+    getTrackerHeaderData(ctx),
   ])
   const isOwner = plan.owner_id === userId
 
@@ -74,7 +77,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   // Milestones + progress.
   const { data: milestones } = await supabase
     .from('tracker_milestones')
-    .select('id, title, status, due_on, sort_order')
+    .select('id, title, description, owner_id, status, health, start_on, due_on, baseline_due_on, priority, progress_mode, progress_pct, sort_order')
     .eq('group_id', groupId)
     .eq('plan_id', planId)
     .is('archived_at', null)
@@ -89,7 +92,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   // Actions (open first, then done).
   const { data: actions } = await supabase
     .from('tracker_actions')
-    .select('id, title, type, who, assignee_id, due_on, status')
+    .select('id, title, type, who, assignee_id, due_on, status, priority, milestone_id, notes, waiting_since')
     .eq('group_id', groupId)
     .eq('plan_id', planId)
     .is('archived_at', null)
@@ -135,13 +138,16 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   const { data: todayVal } = await supabase.rpc('tracker_today', { p_group_id: groupId })
   const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
 
-  // Group time zone (for History timestamps). Default when unset.
+  // Group time zone (for History timestamps) and chaser days (for the Waiting
+  // quick button and "Waiting N days" red state). Defaults when unset.
   const { data: settingsRow } = await supabase
     .from('tracker_settings')
-    .select('time_zone')
+    .select('time_zone, chaser_days')
     .eq('group_id', groupId)
     .maybeSingle()
   const timeZone = (settingsRow?.time_zone as string | null) ?? DEFAULT_SETTINGS.timeZone
+  const chaserDays =
+    typeof settingsRow?.chaser_days === 'number' ? (settingsRow.chaser_days as number) : DEFAULT_SETTINGS.chaserDays
 
   // Activity log for this plan (newest first) — the Latest-activity line and
   // the History card. RLS scopes this to what the reader may see.
@@ -172,6 +178,63 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   const sourceOptions = (lookups.source ?? []).map((s) => ({ key: s.key, label: s.label }))
   const statusOptions = (lookups.status ?? []).map((s) => ({ key: s.key, label: s.label }))
 
+  // ── Milestone / action view-models for the editable sections (P6) ──────────
+  const peopleOptions = people.map((p) => ({ id: p.id, name: p.name || '—' }))
+  const milestoneStatusOptions = (lookups.milestone_status ?? []).map((s) => ({ key: s.key, label: s.label }))
+  const actionTypeOptions = (lookups.action_type ?? []).map((s) => ({ key: s.key, label: s.label }))
+  const priorityOptions = [
+    { key: 'normal', label: 'Normal' },
+    { key: 'high', label: 'High' },
+  ]
+  const milestoneOptions = (milestones ?? []).map((m) => ({ id: m.id as string, title: m.title as string }))
+
+  const milestoneItems: MilestoneItem[] = (milestones ?? []).map((m) => {
+    const p = progressById.get(m.id as string)
+    const slipped = p && p.days_slipped != null && (p.days_slipped as number) > 0 ? (p.days_slipped as number) : 0
+    return {
+      id: m.id as string,
+      title: m.title as string,
+      description: (m.description as string | null) ?? null,
+      owner_id: (m.owner_id as string | null) ?? null,
+      status: (m.status as string) ?? 'backlog',
+      health: (m.health as string | null) ?? null,
+      start_on: (m.start_on as string | null) ?? null,
+      due_on: (m.due_on as string | null) ?? null,
+      baseline_due_on: (m.baseline_due_on as string | null) ?? null,
+      priority: (m.priority as string | null) ?? null,
+      progress_mode: ((m.progress_mode as string) === 'from_actions' ? 'from_actions' : 'manual'),
+      progress_pct: (m.progress_pct as number) ?? 0,
+      doneActions: p?.done_actions ?? 0,
+      totalActions: p?.total_actions ?? 0,
+      viewPct: p?.progress_pct ?? 0,
+      daysSlipped: slipped,
+      overdue: p?.overdue ?? false,
+      statusLabel: lookupLabel(lookups, 'milestone_status', m.status as string),
+      // Only the milestone's owner or a Manager / Group Owner may move the
+      // baseline (the DB enforces too — guard in 085).
+      canEditBaseline: editor || (m.owner_id as string | null) === userId,
+    }
+  })
+
+  const actionItems: ActionItem[] = sortedActions.map((a) => ({
+    id: a.id as string,
+    title: a.title as string,
+    type: (a.type as string | null) ?? null,
+    who: (a.who as string | null) ?? null,
+    assignee_id: (a.assignee_id as string | null) ?? null,
+    due_on: (a.due_on as string | null) ?? null,
+    status: (a.status as string) ?? 'open',
+    priority: (a.priority as string | null) ?? null,
+    milestone_id: (a.milestone_id as string | null) ?? null,
+    notes: (a.notes as string | null) ?? null,
+    waiting_since: (a.waiting_since as string | null) ?? null,
+    typeLabel: lookupLabel(lookups, 'action_type', a.type as string | null),
+    assigneeName: a.assignee_id ? (names[a.assignee_id as string] || null) : null,
+    // The quick buttons are for anyone with edit access or the action's own
+    // assignee (even without project access). The DB enforces too.
+    canQuick: canEdit || (a.assignee_id as string | null) === userId,
+  }))
+
   const lastUpdatedBy = plan.updated_by ? names[plan.updated_by as string] : null
 
   const categoryLabel = lookupLabel(lookups, 'category', plan.category as string | null)
@@ -179,6 +242,26 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
 
   return (
     <div className="space-y-6">
+      {/* Group name → page title + buttons → tabs (design spec) */}
+      <TrackerHeader
+        groupName={header.groupName}
+        title={plan.name as string}
+        showSettings={header.showSettings}
+        actions={
+          showActions ? (
+            <PlanActions
+              planId={planId}
+              archived={plan.archived_at !== null}
+              canEdit={canEdit}
+              isEditor={editor}
+              isOwner={isOwner}
+            />
+          ) : (
+            <span className="text-sm text-muted-foreground">Read only</span>
+          )
+        }
+      />
+
       {/* ── Top section ──────────────────────────────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -193,36 +276,19 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
           <span className="truncate">{plan.name as string}</span>
         </div>
 
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-2">
-            <h1 className="text-2xl font-semibold">{plan.name as string}</h1>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Status:</span>
-              {canEdit ? (
-                <PlanStatusSelect
-                  planId={planId}
-                  current={(plan.status as string | null) ?? ''}
-                  options={statusOptions}
-                />
-              ) : (
-                <StatusLabel
-                  statusKey={plan.status as string | null}
-                  label={lookupLabel(lookups, 'status', plan.status as string) || '—'}
-                />
-              )}
-            </div>
-          </div>
-
-          {showActions ? (
-            <PlanActions
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Status:</span>
+          {canEdit ? (
+            <PlanStatusSelect
               planId={planId}
-              archived={plan.archived_at !== null}
-              canEdit={canEdit}
-              isEditor={editor}
-              isOwner={isOwner}
+              current={(plan.status as string | null) ?? ''}
+              options={statusOptions}
             />
           ) : (
-            <span className="text-sm text-muted-foreground">Read only</span>
+            <StatusLabel
+              statusKey={plan.status as string | null}
+              label={lookupLabel(lookups, 'status', plan.status as string) || '—'}
+            />
           )}
         </div>
 
@@ -278,52 +344,30 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
             </Section>
           )}
 
-          {/* Milestones */}
-          {milestones && milestones.length > 0 && (
-            <Section title="Milestones">
-              <ul className="space-y-3">
-                {milestones.map((m) => {
-                  const p = progressById.get(m.id as string)
-                  const slipped = p && p.days_slipped != null && (p.days_slipped as number) > 0 ? (p.days_slipped as number) : 0
-                  const pct = p ? p.progress_pct : 0
-                  return (
-                    <li key={m.id as string} className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                        <span className="font-medium">{m.title as string}</span>
-                        <Badge variant="secondary">{lookupLabel(lookups, 'milestone_status', m.status as string) || (m.status as string)}</Badge>
-                        {m.due_on && <span className="text-muted-foreground">due {formatDate(m.due_on as string)}</span>}
-                        {p && <span className="text-muted-foreground">{p.done_actions} of {p.total_actions} · {p.progress_pct}%</span>}
-                        {slipped > 0 && <Badge variant="warning">{slipped} days slipped</Badge>}
-                        {p?.overdue && <Badge variant="error">Overdue</Badge>}
-                      </div>
-                      <Progress value={pct} />
-                    </li>
-                  )
-                })}
-              </ul>
-            </Section>
-          )}
+          {/* Milestones (editable — P6) */}
+          <MilestonesSection
+            planId={planId}
+            milestones={milestoneItems}
+            canEdit={canEdit}
+            canDelete={editor}
+            statuses={milestoneStatusOptions}
+            priorities={priorityOptions}
+            people={peopleOptions}
+          />
 
-          {/* Actions (open first) */}
-          {sortedActions.length > 0 && (
-            <Section title="Actions">
-              <ul className="space-y-2">
-                {sortedActions.map((a) => (
-                  <li key={a.id as string} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                    <Badge variant={a.status === 'done' ? 'success' : a.status === 'waiting' ? 'warning' : 'secondary'}>
-                      {a.status === 'done' ? 'Done' : a.status === 'waiting' ? 'Waiting' : 'Open'}
-                    </Badge>
-                    <span className="font-medium">{a.title as string}</span>
-                    {a.type && <span className="text-muted-foreground">{lookupLabel(lookups, 'action_type', a.type as string)}</span>}
-                    <span className="text-muted-foreground">
-                      {a.assignee_id ? (names[a.assignee_id as string] || '—') : ((a.who as string | null) || '—')}
-                    </span>
-                    {a.due_on && <span className="text-muted-foreground">due {formatDate(a.due_on as string)}</span>}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
+          {/* Actions (editable, open first — P6) */}
+          <ActionsSection
+            planId={planId}
+            actions={actionItems}
+            canEdit={canEdit}
+            canDelete={editor}
+            chaserDays={chaserDays}
+            today={today}
+            types={actionTypeOptions}
+            priorities={priorityOptions}
+            people={peopleOptions}
+            milestones={milestoneOptions}
+          />
 
           {/* Update log */}
           <Section title="Update log">

@@ -1,8 +1,11 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
-import { getTrackerContext, ensureGroupSetup, isEditor } from '@/lib/tracker/server'
+import { getTrackerContext, ensureGroupSetup, isEditor, getTrackerHeaderData } from '@/lib/tracker/server'
 import { buildLookups, type LookupRow, type AttentionRow, type MilestoneProgressRow } from '@/lib/tracker/view'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import TrackerHeader from '@/components/tracker/TrackerHeader'
 import PlansList from '@/components/tracker/PlansList'
 import type { PlanListItem } from '@/components/tracker/PlansList'
 
@@ -45,7 +48,10 @@ export default async function PlansPage() {
     )
   }
 
-  const editor = await isEditor(supabase, groupId)
+  const [editor, header] = await Promise.all([
+    isEditor(supabase, groupId),
+    getTrackerHeaderData(ctx),
+  ])
 
   // Lookups for labels and category order.
   const { data: lookupRows } = await supabase
@@ -137,11 +143,32 @@ export default async function PlansPage() {
     })
 
   return (
-    <PlansList
-      items={items}
-      lookups={lookups}
-      today={today}
-      isEditor={editor}
-    />
+    <>
+      {/* Group name → page title + buttons → tabs (design spec) */}
+      <TrackerHeader
+        groupName={header.groupName}
+        title="Projects"
+        showSettings={header.showSettings}
+        actions={
+          editor ? (
+            <>
+              <Button asChild size="sm">
+                <Link href="/tracker/plans/new">New project</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/tracker/plans/import">Import</Link>
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
+      <PlansList
+        items={items}
+        lookups={lookups}
+        today={today}
+        isEditor={editor}
+        hideHeader
+      />
+    </>
   )
 }

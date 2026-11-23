@@ -1,8 +1,9 @@
 import { notFound, redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
-import { getTrackerContext, isEditor, canAccess, getGroupPeople } from '@/lib/tracker/server'
+import { getTrackerContext, isEditor, canAccess, getGroupPeople, getTrackerHeaderData } from '@/lib/tracker/server'
 import Link from 'next/link'
 import { buildLookups, lookupLabel, type LookupRow } from '@/lib/tracker/view'
+import TrackerHeader from '@/components/tracker/TrackerHeader'
 import PlanForm, { type PlanFormValues } from '@/components/tracker/PlanForm'
 
 export const dynamic = 'force-dynamic'
@@ -28,6 +29,7 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
     canAccess(supabase, planId, 'edit'),
   ])
   if (!canEdit) redirect(`/tracker/plans/${planId}`)
+  const header = await getTrackerHeaderData(ctx)
 
   const { data: lookupRows } = await supabase
     .from('tracker_lookups')
@@ -87,6 +89,7 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
 
   return (
     <div className="space-y-4">
+      <TrackerHeader groupName={header.groupName} title={`Edit ${plan.name as string}`} showSettings={header.showSettings} />
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <Link href="/tracker/plans" className="hover:underline">Projects</Link>

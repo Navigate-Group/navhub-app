@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
-import { getTrackerContext, isEditor } from '@/lib/tracker/server'
+import { getTrackerContext, isEditor, getTrackerHeaderData } from '@/lib/tracker/server'
 import { buildLookups, type LookupRow } from '@/lib/tracker/view'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import TrackerHeader from '@/components/tracker/TrackerHeader'
 import ImportWizard, { type LookupOption } from '@/components/tracker/ImportWizard'
 
 export const dynamic = 'force-dynamic'
@@ -15,7 +16,14 @@ export default async function ImportPlansPage() {
   if (!ctx) redirect('/home')
   const { supabase, groupId } = ctx
 
-  const editor = await isEditor(supabase, groupId)
+  const [editor, header] = await Promise.all([
+    isEditor(supabase, groupId),
+    getTrackerHeaderData(ctx),
+  ])
+
+  const trackerHeader = (
+    <TrackerHeader groupName={header.groupName} title="Import projects" showSettings={header.showSettings} />
+  )
 
   const breadcrumb = (
     <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
@@ -30,6 +38,7 @@ export default async function ImportPlansPage() {
   if (!editor) {
     return (
       <div className="space-y-4">
+        {trackerHeader}
         {breadcrumb}
         <Card>
           <CardHeader>
@@ -63,9 +72,9 @@ export default async function ImportPlansPage() {
 
   return (
     <div className="space-y-4">
+      {trackerHeader}
       {breadcrumb}
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold">Import projects</h1>
         <p className="text-sm text-muted-foreground">
           Choose an export file from the previous tracker. You&apos;ll see a preview before anything is
           saved.

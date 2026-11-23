@@ -49,11 +49,16 @@ export default function PlansList({
   lookups,
   today,
   isEditor,
+  hideHeader = false,
 }: {
   items: PlanListItem[]
   lookups: Lookups
   today: string
   isEditor: boolean
+  /** When the page already renders the title + buttons (TrackerHeader), omit the
+   *  internal header so the title is not shown twice (design spec: the tabs sit
+   *  below the page title). */
+  hideHeader?: boolean
 }) {
   const [filter, setFilter] = useState<Filter>('active')
   const [showArchived, setShowArchived] = useState(false)
@@ -93,24 +98,27 @@ export default function PlansList({
 
   return (
     <div className="space-y-4">
-      {/* Header + actions */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <FolderKanban className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-xl font-semibold">Projects</h1>
-        </div>
-        <div className="flex-1" />
-        {isEditor && (
+      {/* Header + actions. Omitted when the page renders TrackerHeader (design
+          spec: group name → page title + buttons → tabs). */}
+      {!hideHeader && (
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <Button asChild size="sm">
-              <Link href="/tracker/plans/new">New project</Link>
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/tracker/plans/import">Import</Link>
-            </Button>
+            <FolderKanban className="h-5 w-5 text-muted-foreground" />
+            <h1 className="text-xl font-semibold">Projects</h1>
           </div>
-        )}
-      </div>
+          <div className="flex-1" />
+          {isEditor && (
+            <div className="flex items-center gap-2">
+              <Button asChild size="sm">
+                <Link href="/tracker/plans/new">New project</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/tracker/plans/import">Import</Link>
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
