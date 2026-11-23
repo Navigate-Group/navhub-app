@@ -7,19 +7,20 @@ import { cn } from '@/lib/utils'
 type Tab = { href: string; label: string; soon?: boolean }
 
 /**
- * Shared tracker top navigation (design spec): the group's name in small grey
- * text, then the section tabs — My week · Projects · People · Weekly review ·
- * Settings. Only Projects is built; the other tabs carry a small "Soon" badge
- * and lead to a coming-soon placeholder. Settings is shown only to Managers /
- * Group Owners (the server passes `showSettings`). Horizontally scrollable on a
- * phone. Colours follow the group theme via `--primary` / `text-foreground`.
+ * Shared tracker section tabs (design spec): My week · Projects · People ·
+ * Weekly review · Settings. Only Projects is built; the other tabs carry a
+ * small "Soon" badge and lead to a coming-soon placeholder. Settings is shown
+ * only to Managers / Group Owners (the server passes `showSettings`).
+ * Horizontally scrollable on a phone. Colours follow the group theme via
+ * `--primary` / `text-foreground`.
+ *
+ * The group name and page title are rendered above the tabs by TrackerHeader,
+ * in the agreed order (group name → page title + buttons → tabs).
  */
 export default function TrackerTabs({
   showSettings,
-  groupName,
 }: {
   showSettings: boolean
-  groupName?: string | null
 }) {
   const pathname = usePathname()
 
@@ -32,10 +33,7 @@ export default function TrackerTabs({
   ]
 
   return (
-    <div className="mb-4">
-      {groupName && (
-        <p className="px-0 text-xs text-muted-foreground">{groupName}</p>
-      )}
+    <div>
       <nav aria-label="Projects sections" className="-mx-6 border-b px-6">
         <ul className="flex gap-1 overflow-x-auto">
           {tabs.map((t) => {

@@ -65,6 +65,22 @@ export async function canAccess(
   return data === true
 }
 
+/**
+ * Data the shared tracker page header needs (design spec): the group's name
+ * (small grey line) and whether to show the Settings tab (Managers / Group
+ * Owners only). Both are read through the signed-in user's server client.
+ */
+export async function getTrackerHeaderData(
+  ctx: TrackerContext,
+): Promise<{ groupName: string | null; showSettings: boolean }> {
+  const { supabase, groupId } = ctx
+  const [{ data: group }, showSettings] = await Promise.all([
+    supabase.from('groups').select('name').eq('id', groupId).maybeSingle(),
+    isEditor(supabase, groupId),
+  ])
+  return { groupName: (group?.name as string | null) ?? null, showSettings }
+}
+
 export type GroupSetupState =
   | { state: 'ready' }
   | { state: 'not_set_up' }
