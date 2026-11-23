@@ -100,7 +100,7 @@ async function loadLegacyIds(
     if (extraKind) query = query.eq('kind', extraKind)
     const { data, error } = await query
     if (error || !data) break
-    rows.push(...(data as Record<string, unknown>[]))
+    rows.push(...(data as unknown as Record<string, unknown>[]))
     if (data.length < PAGE) break
   }
   return rows
