@@ -54,6 +54,10 @@ BEGIN
     ('40000000-0000-0000-0000-000000000002', g, p1, 'M2', 'planned',     '2026-11-12', NULL,         'manual',       40),
     ('40000000-0000-0000-0000-000000000003', g, p2, 'M3', 'planned',     NULL,         NULL,         'from_actions', 0),
     ('40000000-0000-0000-0000-000000000004', g, p3, 'M4', 'completed',   '2026-11-01', NULL,         'from_actions', 0);
+  -- Migration 085's insert trigger defaults baseline_due_on to due_on; M2 and M4
+  -- have no baseline in the domain model (days_slipped is "-"), so put it back.
+  UPDATE tracker_milestones SET baseline_due_on = NULL
+  WHERE id IN ('40000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000004');
 
   INSERT INTO tracker_actions (id, group_id, plan_id, milestone_id, title, type, assignee_id, due_on, status, waiting_since, done_on, created_on, archived_at) VALUES
     ('50000000-0000-0000-0000-000000000001', g, p1a, NULL, 'A1',  'call',   u2, '2026-11-17', 'open',    NULL,         NULL,         '2026-11-01', NULL),
