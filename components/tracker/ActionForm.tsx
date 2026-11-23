@@ -24,6 +24,7 @@ export type ActionValues = {
   status: string
   priority: string
   milestone_id: string
+  contact_id: string
   notes: string
 }
 
@@ -54,6 +55,7 @@ export default function ActionForm({
   priorities,
   people,
   milestones,
+  contacts,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -65,6 +67,7 @@ export default function ActionForm({
   priorities: Option[]
   people: Person[]
   milestones: { id: string; title: string }[]
+  contacts: { id: string; name: string }[]
 }) {
   const router = useRouter()
   const [v, setV] = useState<ActionValues>(initial)
@@ -90,6 +93,7 @@ export default function ActionForm({
       status: v.status || 'open',
       priority: v.priority || 'normal',
       milestone_id: v.milestone_id || null,
+      contact_id: v.contact_id || null,
       notes: v.notes || null,
     }
     if (mode === 'new') payload.plan_id = planId
@@ -170,12 +174,21 @@ export default function ActionForm({
             </div>
           </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="a-milestone">Milestone</Label>
-            <select id="a-milestone" className={selectClass} value={v.milestone_id} onChange={(e) => set('milestone_id', e.target.value)}>
-              <option value="">None</option>
-              {milestones.map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
-            </select>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="a-milestone">Milestone</Label>
+              <select id="a-milestone" className={selectClass} value={v.milestone_id} onChange={(e) => set('milestone_id', e.target.value)}>
+                <option value="">None</option>
+                {milestones.map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="a-contact">Contact</Label>
+              <select id="a-contact" className={selectClass} value={v.contact_id} onChange={(e) => set('contact_id', e.target.value)}>
+                <option value="">None</option>
+                {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
           </div>
 
           <div className="space-y-1">

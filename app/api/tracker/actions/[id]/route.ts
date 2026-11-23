@@ -97,6 +97,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     }
     if ('priority' in body) patch.priority = strOrNull(body.priority) ?? 'normal'
     if ('milestone_id' in body) patch.milestone_id = strOrNull(body.milestone_id)
+    if ('contact_id' in body) patch.contact_id = strOrNull(body.contact_id)
     if ('notes' in body) patch.notes = strOrNull(body.notes)
   }
 
@@ -108,7 +109,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     .from('tracker_actions')
     .update(patch)
     .eq('id', actionId)
-    .select('id')
+    .select('id, status, type, contact_id')
 
   if (error) return writeErrorResponse(error)
   if (!data || data.length === 0) {
@@ -117,6 +118,18 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       { status: 403 },
     )
   }
+
+  // "Last spoke": when a call or email action ends up Done and has a contact,
+  // move that contact's last-contact date to today. Best-effort — if the person
+  // can't change the contact (e.g. an assignee without edit access) the update
+  // is skipped quietly; the action stays marked Done.
+  const updated = data[0] as { status?: string; type?: string | null; contact_id?: string | null }
+  if (updated.status === 'done' && updated.contact_id && (updated.type === 'call' || updated.type === 'email')) {
+    const { data: todayVal } = await supabase.rpc('tracker_today', { p_group_id: groupId })
+    const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
+    await supabase.from('tracker_contacts').update({ last_contact: today }).eq('id', updated.contact_id)
+  }
+
   return NextResponse.json({ data: { id: actionId } })
 }
 

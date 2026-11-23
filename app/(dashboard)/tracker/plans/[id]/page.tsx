@@ -20,6 +20,8 @@ import PlanActions from '@/components/tracker/PlanActions'
 import PlanHistory from '@/components/tracker/PlanHistory'
 import MilestonesSection, { type MilestoneItem } from '@/components/tracker/MilestonesSection'
 import ActionsSection, { type ActionItem } from '@/components/tracker/ActionsSection'
+import CommentsSection, { type CommentItem } from '@/components/tracker/CommentsSection'
+import ContactsSection, { type ContactDetail } from '@/components/tracker/ContactsSection'
 import { cn } from '@/lib/utils'
 import {
   toHistoryItem,
@@ -46,9 +48,10 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
 
   if (!plan) notFound()
 
-  const [editor, canEdit, header] = await Promise.all([
+  const [editor, canEdit, canComment, header] = await Promise.all([
     isEditor(supabase, groupId),
     canAccess(supabase, planId, 'edit'),
+    canAccess(supabase, planId, 'comment'),
     getTrackerHeaderData(ctx),
   ])
   const isOwner = plan.owner_id === userId
@@ -92,7 +95,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   // Actions (open first, then done).
   const { data: actions } = await supabase
     .from('tracker_actions')
-    .select('id, title, type, who, assignee_id, due_on, status, priority, milestone_id, notes, waiting_since')
+    .select('id, title, type, who, assignee_id, due_on, status, priority, milestone_id, contact_id, notes, waiting_since')
     .eq('group_id', groupId)
     .eq('plan_id', planId)
     .is('archived_at', null)
@@ -115,16 +118,42 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
     return (b.date as string).localeCompare(a.date as string)
   })
 
-  // Contacts linked to the plan.
+  // Contacts linked to the plan (full details for the side box and the action
+  // Contact picker).
   const { data: contactLinks } = await supabase
     .from('tracker_contact_plans')
-    .select('contact:tracker_contacts(id, name, org, role)')
+    .select('contact:tracker_contacts(id, name, org, role, phone, email, notes, last_contact)')
     .eq('group_id', groupId)
     .eq('plan_id', planId)
-  type ContactRow = { id: string; name: string; org: string | null; role: string | null }
-  const contacts: ContactRow[] = ((contactLinks ?? []) as unknown as { contact: ContactRow | ContactRow[] | null }[])
+  const contacts: ContactDetail[] = ((contactLinks ?? []) as unknown as { contact: ContactDetail | ContactDetail[] | null }[])
     .map((c) => (Array.isArray(c.contact) ? c.contact[0] ?? null : c.contact))
-    .filter((c): c is ContactRow => c != null)
+    .filter((c): c is ContactDetail => c != null)
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const linkedIds = new Set(contacts.map((c) => c.id))
+
+  // Group contacts not yet linked to this plan (for "link an existing one").
+  // Only loaded for people who can edit (they are the only ones who can link).
+  let linkableContacts: { id: string; name: string; org: string | null; role: string | null }[] = []
+  if (canEdit) {
+    const { data: allContacts } = await supabase
+      .from('tracker_contacts')
+      .select('id, name, org, role')
+      .eq('group_id', groupId)
+      .is('archived_at', null)
+      .order('name', { ascending: true })
+    linkableContacts = ((allContacts ?? []) as { id: string; name: string; org: string | null; role: string | null }[])
+      .filter((c) => !linkedIds.has(c.id))
+  }
+
+  // Project comments (not removed), oldest first so the newest sits at the
+  // bottom. RLS scopes the read to group members.
+  const { data: commentRows } = await supabase
+    .from('tracker_comments')
+    .select('id, author_id, body, created_at, edited_at')
+    .eq('plan_id', planId)
+    .eq('entity_type', 'plan')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true })
 
   // Members (lead/member rows). The plan's own lead_id/owner_id are shown too.
   const { data: members } = await supabase
@@ -187,6 +216,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
     { key: 'high', label: 'High' },
   ]
   const milestoneOptions = (milestones ?? []).map((m) => ({ id: m.id as string, title: m.title as string }))
+  const contactOptions = contacts.map((c) => ({ id: c.id, name: c.name }))
 
   const milestoneItems: MilestoneItem[] = (milestones ?? []).map((m) => {
     const p = progressById.get(m.id as string)
@@ -226,14 +256,39 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
     status: (a.status as string) ?? 'open',
     priority: (a.priority as string | null) ?? null,
     milestone_id: (a.milestone_id as string | null) ?? null,
+    contact_id: (a.contact_id as string | null) ?? null,
     notes: (a.notes as string | null) ?? null,
     waiting_since: (a.waiting_since as string | null) ?? null,
     typeLabel: lookupLabel(lookups, 'action_type', a.type as string | null),
     assigneeName: a.assignee_id ? (names[a.assignee_id as string] || null) : null,
+    contactName: a.contact_id ? (contactNameById[a.contact_id as string] || null) : null,
     // The quick buttons are for anyone with edit access or the action's own
     // assignee (even without project access). The DB enforces too.
     canQuick: canEdit || (a.assignee_id as string | null) === userId,
   }))
+
+  // Comment view-models. The author edits / deletes their own; Managers / Group
+  // Owners (editor) can also delete anyone's. The database is the guard.
+  const commentItems: CommentItem[] = ((commentRows ?? []) as {
+    id: string
+    author_id: string | null
+    body: string
+    created_at: string
+    edited_at: string | null
+  }[]).map((c) => {
+    const mine = c.author_id === userId
+    return {
+      id: c.id,
+      body: c.body,
+      authorName: c.author_id ? (names[c.author_id] || 'Someone no longer in the group') : 'System',
+      createdAt: c.created_at,
+      edited: c.edited_at != null,
+      canEdit: mine && canComment,
+      canDelete: mine ? canComment : editor,
+    }
+  })
+  // Anyone with Comment or Edit access (and all Managers / Group Owners) can post.
+  const canPostComment = canComment
 
   const lastUpdatedBy = plan.updated_by ? names[plan.updated_by as string] : null
 
@@ -367,6 +422,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
             priorities={priorityOptions}
             people={peopleOptions}
             milestones={milestoneOptions}
+            contacts={contactOptions}
           />
 
           {/* Update log */}
@@ -407,6 +463,9 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
             )}
           </Section>
 
+          {/* Comments */}
+          <CommentsSection planId={planId} comments={commentItems} canPost={canPostComment} />
+
           {/* History (FR-1.5) */}
           <PlanHistory items={historyItems} />
         </div>
@@ -428,6 +487,21 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
               )}
             </dl>
           </Section>
+
+          {/* Project access — Managers / Group Owners only */}
+          {editor && (
+            <Section title="Project access">
+              <p className="text-sm text-muted-foreground">
+                Give a member Comment or Edit to let them work on this project.
+              </p>
+              <Link
+                href={`/tracker/plans/${planId}/access`}
+                className="text-sm text-primary underline"
+              >
+                Manage access
+              </Link>
+            </Section>
+          )}
 
           {/* Dates */}
           <Section title="Dates">
@@ -461,18 +535,13 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
           )}
 
           {/* Contacts */}
-          {contacts.length > 0 && (
-            <Section title="Contacts">
-              <ul className="space-y-1 text-sm">
-                {contacts.map((c) => (
-                  <li key={c.id}>
-                    <span className="font-medium">{c.name}</span>
-                    {c.org && <span className="text-muted-foreground"> · {c.org}</span>}
-                    {c.role && <span className="text-muted-foreground"> · {c.role}</span>}
-                  </li>
-                ))}
-              </ul>
-            </Section>
+          {(canEdit || contacts.length > 0) && (
+            <ContactsSection
+              planId={planId}
+              contacts={contacts}
+              canEdit={canEdit}
+              linkable={linkableContacts}
+            />
           )}
         </div>
       </div>
