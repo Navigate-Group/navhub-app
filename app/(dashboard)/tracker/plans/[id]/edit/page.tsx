@@ -1,9 +1,9 @@
 import { notFound, redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getTrackerContext, isEditor, canAccess, getGroupPeople } from '@/lib/tracker/server'
-import { buildLookups, type LookupRow } from '@/lib/tracker/view'
+import Link from 'next/link'
+import { buildLookups, lookupLabel, type LookupRow } from '@/lib/tracker/view'
 import PlanForm, { type PlanFormValues } from '@/components/tracker/PlanForm'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,28 +83,41 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
     member_ids: memberIds,
   }
 
+  const categoryLabel = lookupLabel(lookups, 'category', plan.category as string | null)
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Edit project</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <PlanForm
-          mode="edit"
-          planId={planId}
-          initial={initial}
-          categories={(lookups.category ?? []).map((o) => ({ key: o.key, label: o.label }))}
-          statuses={(lookups.status ?? []).map((o) => ({ key: o.key, label: o.label }))}
-          regions={(lookups.region ?? []).map((o) => ({ key: o.key, label: o.label }))}
-          priorities={[{ key: 'normal', label: 'Normal' }, { key: 'high', label: 'High' }]}
-          parentOptions={parentOptions}
-          people={peopleOptions}
-          managers={managers}
-          isEditor={editor}
-          canEditMembers={editor}
-        />
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <Link href="/tracker/plans" className="hover:underline">Projects</Link>
+          <span>›</span>
+          {categoryLabel && (
+            <>
+              <span>{categoryLabel}</span>
+              <span>›</span>
+            </>
+          )}
+          <span className="truncate">{plan.name as string}</span>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Managers and Group Owners create projects. Editing an existing project uses the same form.
+        </p>
+      </div>
+      <PlanForm
+        mode="edit"
+        planId={planId}
+        initial={initial}
+        categories={(lookups.category ?? []).map((o) => ({ key: o.key, label: o.label }))}
+        statuses={(lookups.status ?? []).map((o) => ({ key: o.key, label: o.label }))}
+        regions={(lookups.region ?? []).map((o) => ({ key: o.key, label: o.label }))}
+        priorities={[{ key: 'normal', label: 'Normal' }, { key: 'high', label: 'High' }]}
+        parentOptions={parentOptions}
+        people={peopleOptions}
+        managers={managers}
+        isEditor={editor}
+        canEditMembers={editor}
+      />
+    </div>
   )
 }
 

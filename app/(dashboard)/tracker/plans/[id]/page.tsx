@@ -14,9 +14,11 @@ import {
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import PlanStatusSelect from '@/components/tracker/PlanStatusSelect'
+import StatusLabel from '@/components/tracker/StatusLabel'
 import LogUpdateForm from '@/components/tracker/LogUpdateForm'
 import PlanActions from '@/components/tracker/PlanActions'
 import PlanHistory from '@/components/tracker/PlanHistory'
+import { cn } from '@/lib/utils'
 import {
   toHistoryItem,
   type ActivityLogRow,
@@ -172,65 +174,66 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
 
   const lastUpdatedBy = plan.updated_by ? names[plan.updated_by as string] : null
 
+  const categoryLabel = lookupLabel(lookups, 'category', plan.category as string | null)
+  const showActions = canEdit || editor || isOwner
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* ── Top section ──────────────────────────────────────────────────────── */}
       <div className="space-y-3">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <Link href="/tracker/plans" className="hover:underline">Projects</Link>
-          <span>/</span>
+          <span>›</span>
+          {categoryLabel && (
+            <>
+              <span>{categoryLabel}</span>
+              <span>›</span>
+            </>
+          )}
           <span className="truncate">{plan.name as string}</span>
         </div>
 
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
+          <div className="space-y-2">
             <h1 className="text-2xl font-semibold">{plan.name as string}</h1>
-            <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-              {plan.category && <span>{lookupLabel(lookups, 'category', plan.category as string)}</span>}
-              {plan.client && <span>· {plan.client as string}</span>}
-              {plan.phase && <span>· {plan.phase as string}</span>}
-              {plan.region && <span>· {lookupLabel(lookups, 'region', plan.region as string)}</span>}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Status:</span>
+              {canEdit ? (
+                <PlanStatusSelect
+                  planId={planId}
+                  current={(plan.status as string | null) ?? ''}
+                  options={statusOptions}
+                />
+              ) : (
+                <StatusLabel
+                  statusKey={plan.status as string | null}
+                  label={lookupLabel(lookups, 'status', plan.status as string) || '—'}
+                />
+              )}
             </div>
           </div>
 
-          <PlanActions
-            planId={planId}
-            archived={plan.archived_at !== null}
-            canEdit={canEdit}
-            isEditor={editor}
-            isOwner={isOwner}
-          />
+          {showActions ? (
+            <PlanActions
+              planId={planId}
+              archived={plan.archived_at !== null}
+              canEdit={canEdit}
+              isEditor={editor}
+              isOwner={isOwner}
+            />
+          ) : (
+            <span className="text-sm text-muted-foreground">Read only</span>
+          )}
         </div>
 
-        {/* Status + facts */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">Status:</span>
-            {canEdit ? (
-              <PlanStatusSelect
-                planId={planId}
-                current={(plan.status as string | null) ?? ''}
-                options={statusOptions}
-              />
-            ) : (
-              <span>{lookupLabel(lookups, 'status', plan.status as string) || '—'}</span>
-            )}
-          </div>
-          <div>
-            <span className="text-muted-foreground">Priority: </span>
-            {plan.priority === 'high' ? 'High' : 'Normal'}
-          </div>
-          {(plan.start_on || plan.end_on) && (
-            <div>
-              <span className="text-muted-foreground">Dates: </span>
-              {formatDate(plan.start_on as string | null) || '—'} → {formatDate(plan.end_on as string | null) || '—'}
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">Progress:</span>
-            <div className="w-28"><Progress value={(plan.progress_pct as number) ?? 0} /></div>
-            <span>{(plan.progress_pct as number) ?? 0}%</span>
-          </div>
+        {/* One grey metadata line */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          {categoryLabel && <span>{categoryLabel}</span>}
+          {plan.client && <span>· {plan.client as string}</span>}
+          {plan.phase && <span>· {plan.phase as string}</span>}
+          {plan.region && <span>· {lookupLabel(lookups, 'region', plan.region as string)}</span>}
+          <span>· {plan.priority === 'high' ? 'High priority' : 'Normal priority'}</span>
+          <span>· {(plan.progress_pct as number) ?? 0}% complete</span>
         </div>
 
         <p className="text-xs text-muted-foreground">
@@ -243,154 +246,192 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
         )}
       </div>
 
-      {/* Summary */}
-      {plan.summary && (
-        <Section title="Summary">
-          <p className="whitespace-pre-line text-sm">{plan.summary as string}</p>
-        </Section>
-      )}
-
-      {/* Folder */}
-      {plan.folder && (
-        <Section title="Folder">
-          {isFolderLink(plan.folder as string) ? (
-            <a
-              href={(plan.folder as string).trim()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary underline break-all"
-            >
-              {plan.folder as string}
-            </a>
-          ) : (
-            <p className="text-sm break-all">{plan.folder as string}</p>
+      {/* ── Two-column layout ────────────────────────────────────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Wide column */}
+        <div className="space-y-6 lg:col-span-2">
+          {/* Summary and folder */}
+          {(plan.summary || plan.folder) && (
+            <Section title="Summary">
+              {plan.summary ? (
+                <p className="whitespace-pre-line text-sm">{plan.summary as string}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No summary yet.</p>
+              )}
+              {plan.folder && (
+                <div className="space-y-1">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Folder</h3>
+                  {isFolderLink(plan.folder as string) ? (
+                    <a
+                      href={(plan.folder as string).trim()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary underline break-all"
+                    >
+                      {plan.folder as string}
+                    </a>
+                  ) : (
+                    <p className="text-sm break-all">{plan.folder as string}</p>
+                  )}
+                </div>
+              )}
+            </Section>
           )}
-        </Section>
-      )}
 
-      {/* Sub-projects grouped by region */}
-      {subPlans && subPlans.length > 0 && (
-        <Section title="Sub-projects">
-          {groupByRegion(subPlans as SubPlan[]).map((grp) => (
-            <div key={grp.region} className="space-y-1">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {grp.region ? lookupLabel(lookups, 'region', grp.region) : 'No region'}
-              </h3>
-              <ul className="space-y-1">
-                {grp.plans.map((s) => (
-                  <li key={s.id} className="flex items-center justify-between gap-2 text-sm">
-                    <Link href={`/tracker/plans/${s.id}`} className="hover:underline">{s.name}</Link>
-                    <Badge variant="secondary">{lookupLabel(lookups, 'status', s.status) || '—'}</Badge>
+          {/* Milestones */}
+          {milestones && milestones.length > 0 && (
+            <Section title="Milestones">
+              <ul className="space-y-3">
+                {milestones.map((m) => {
+                  const p = progressById.get(m.id as string)
+                  const slipped = p && p.days_slipped != null && (p.days_slipped as number) > 0 ? (p.days_slipped as number) : 0
+                  const pct = p ? p.progress_pct : 0
+                  return (
+                    <li key={m.id as string} className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                        <span className="font-medium">{m.title as string}</span>
+                        <Badge variant="secondary">{lookupLabel(lookups, 'milestone_status', m.status as string) || (m.status as string)}</Badge>
+                        {m.due_on && <span className="text-muted-foreground">due {formatDate(m.due_on as string)}</span>}
+                        {p && <span className="text-muted-foreground">{p.done_actions} of {p.total_actions} · {p.progress_pct}%</span>}
+                        {slipped > 0 && <Badge variant="warning">{slipped} days slipped</Badge>}
+                        {p?.overdue && <Badge variant="error">Overdue</Badge>}
+                      </div>
+                      <Progress value={pct} />
+                    </li>
+                  )
+                })}
+              </ul>
+            </Section>
+          )}
+
+          {/* Actions (open first) */}
+          {sortedActions.length > 0 && (
+            <Section title="Actions">
+              <ul className="space-y-2">
+                {sortedActions.map((a) => (
+                  <li key={a.id as string} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <Badge variant={a.status === 'done' ? 'success' : a.status === 'waiting' ? 'warning' : 'secondary'}>
+                      {a.status === 'done' ? 'Done' : a.status === 'waiting' ? 'Waiting' : 'Open'}
+                    </Badge>
+                    <span className="font-medium">{a.title as string}</span>
+                    {a.type && <span className="text-muted-foreground">{lookupLabel(lookups, 'action_type', a.type as string)}</span>}
+                    <span className="text-muted-foreground">
+                      {a.assignee_id ? (names[a.assignee_id as string] || '—') : ((a.who as string | null) || '—')}
+                    </span>
+                    {a.due_on && <span className="text-muted-foreground">due {formatDate(a.due_on as string)}</span>}
                   </li>
                 ))}
               </ul>
-            </div>
-          ))}
-        </Section>
-      )}
-
-      {/* Milestones (read-only) */}
-      {milestones && milestones.length > 0 && (
-        <Section title="Milestones">
-          <ul className="space-y-2">
-            {milestones.map((m) => {
-              const p = progressById.get(m.id as string)
-              const slipped = p && p.days_slipped != null && (p.days_slipped as number) > 0 ? (p.days_slipped as number) : 0
-              return (
-                <li key={m.id as string} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                  <span className="font-medium">{m.title as string}</span>
-                  <Badge variant="secondary">{lookupLabel(lookups, 'milestone_status', m.status as string) || (m.status as string)}</Badge>
-                  {m.due_on && <span className="text-muted-foreground">due {formatDate(m.due_on as string)}</span>}
-                  {p && <span className="text-muted-foreground">{p.done_actions} of {p.total_actions} · {p.progress_pct}%</span>}
-                  {slipped > 0 && <Badge variant="warning">{slipped} days slipped</Badge>}
-                  {p?.overdue && <Badge variant="error">Overdue</Badge>}
-                </li>
-              )
-            })}
-          </ul>
-        </Section>
-      )}
-
-      {/* Actions (read-only) */}
-      {sortedActions.length > 0 && (
-        <Section title="Actions">
-          <ul className="space-y-2">
-            {sortedActions.map((a) => (
-              <li key={a.id as string} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                <Badge variant={a.status === 'done' ? 'success' : a.status === 'waiting' ? 'warning' : 'secondary'}>
-                  {a.status === 'done' ? 'Done' : a.status === 'waiting' ? 'Waiting' : 'Open'}
-                </Badge>
-                <span className="font-medium">{a.title as string}</span>
-                {a.type && <span className="text-muted-foreground">{lookupLabel(lookups, 'action_type', a.type as string)}</span>}
-                <span className="text-muted-foreground">
-                  {a.assignee_id ? (names[a.assignee_id as string] || '—') : ((a.who as string | null) || '—')}
-                </span>
-                {a.due_on && <span className="text-muted-foreground">due {formatDate(a.due_on as string)}</span>}
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {/* Update log */}
-      <Section title="Update log">
-        {canEdit && (
-          <div className="mb-4">
-            <LogUpdateForm planId={planId} sourceOptions={sourceOptions} today={today} />
-          </div>
-        )}
-        {sortedUpdates.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No updates yet.</p>
-        ) : (
-          <ul className="space-y-3">
-            {sortedUpdates.map((u) => (
-              <li key={u.id as string} className="space-y-1 border-l-2 pl-3">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>{formatDate(u.date as string)}</span>
-                  {u.kind === 'handover' && <Badge variant="outline">Handover</Badge>}
-                  {u.source && <span>· {lookupLabel(lookups, 'source', u.source as string)}</span>}
-                  {u.author_id && <span>· by {names[u.author_id as string] || '—'}</span>}
-                </div>
-                <p className="whitespace-pre-line text-sm">{u.text as string}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      {/* History (FR-1.5) */}
-      <PlanHistory items={historyItems} />
-
-      {/* Contacts */}
-      {contacts.length > 0 && (
-        <Section title="Contacts">
-          <ul className="space-y-1 text-sm">
-            {contacts.map((c) => (
-              <li key={c.id}>
-                <span className="font-medium">{c.name}</span>
-                {c.org && <span className="text-muted-foreground"> · {c.org}</span>}
-                {c.role && <span className="text-muted-foreground"> · {c.role}</span>}
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {/* People */}
-      <Section title="People">
-        <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
-          <dt className="text-muted-foreground">Owner</dt>
-          <dd>{names[plan.owner_id as string] || '—'}</dd>
-          <dt className="text-muted-foreground">Lead</dt>
-          <dd>{plan.lead_id ? (names[plan.lead_id as string] || '—') : '—'}</dd>
-          {members && members.length > 0 && (
-            <>
-              <dt className="text-muted-foreground">Members</dt>
-              <dd>{members.map((m) => names[m.user_id as string] || '—').join(', ')}</dd>
-            </>
+            </Section>
           )}
-        </dl>
-      </Section>
+
+          {/* Update log */}
+          <Section title="Update log">
+            {canEdit && (
+              <div className="mb-4">
+                <LogUpdateForm planId={planId} sourceOptions={sourceOptions} today={today} />
+              </div>
+            )}
+            {sortedUpdates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No updates yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {sortedUpdates.map((u) => {
+                  const isHandover = u.kind === 'handover'
+                  return (
+                    <li
+                      key={u.id as string}
+                      className={cn(
+                        'flex gap-3 border-l-2 pl-3 text-sm',
+                        isHandover && 'rounded-r-md border-primary bg-primary/5 py-2',
+                      )}
+                    >
+                      {/* Date + source on the left */}
+                      <div className="w-28 shrink-0 space-y-0.5 text-xs text-muted-foreground">
+                        <div>{formatDate(u.date as string)}</div>
+                        {u.source && <div>{lookupLabel(lookups, 'source', u.source as string)}</div>}
+                        {u.author_id && <div>by {names[u.author_id as string] || '—'}</div>}
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        {isHandover && <Badge variant="outline">Handover</Badge>}
+                        <p className="whitespace-pre-line">{u.text as string}</p>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </Section>
+
+          {/* History (FR-1.5) */}
+          <PlanHistory items={historyItems} />
+        </div>
+
+        {/* Narrow column */}
+        <div className="space-y-6">
+          {/* People */}
+          <Section title="People">
+            <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
+              <dt className="text-muted-foreground">Owner</dt>
+              <dd>{names[plan.owner_id as string] || '—'}</dd>
+              <dt className="text-muted-foreground">Lead</dt>
+              <dd>{plan.lead_id ? (names[plan.lead_id as string] || '—') : '—'}</dd>
+              {members && members.length > 0 && (
+                <>
+                  <dt className="text-muted-foreground">Members</dt>
+                  <dd>{members.map((m) => names[m.user_id as string] || '—').join(', ')}</dd>
+                </>
+              )}
+            </dl>
+          </Section>
+
+          {/* Dates */}
+          <Section title="Dates">
+            <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
+              <dt className="text-muted-foreground">Start</dt>
+              <dd>{formatDate(plan.start_on as string | null) || '—'}</dd>
+              <dt className="text-muted-foreground">End</dt>
+              <dd>{formatDate(plan.end_on as string | null) || '—'}</dd>
+            </dl>
+          </Section>
+
+          {/* Sub-projects grouped by region */}
+          {subPlans && subPlans.length > 0 && (
+            <Section title="Sub-projects">
+              {groupByRegion(subPlans as SubPlan[]).map((grp) => (
+                <div key={grp.region} className="space-y-1">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {grp.region ? lookupLabel(lookups, 'region', grp.region) : 'No region'}
+                  </h3>
+                  <ul className="space-y-1">
+                    {grp.plans.map((s) => (
+                      <li key={s.id} className="flex items-center justify-between gap-2 text-sm">
+                        <Link href={`/tracker/plans/${s.id}`} className="hover:underline">{s.name}</Link>
+                        <StatusLabel statusKey={s.status} label={lookupLabel(lookups, 'status', s.status) || '—'} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </Section>
+          )}
+
+          {/* Contacts */}
+          {contacts.length > 0 && (
+            <Section title="Contacts">
+              <ul className="space-y-1 text-sm">
+                {contacts.map((c) => (
+                  <li key={c.id}>
+                    <span className="font-medium">{c.name}</span>
+                    {c.org && <span className="text-muted-foreground"> · {c.org}</span>}
+                    {c.role && <span className="text-muted-foreground"> · {c.role}</span>}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
