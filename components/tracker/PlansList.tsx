@@ -199,9 +199,14 @@ function PlanCard({ plan, lookups, today }: { plan: PlanListItem; lookups: Looku
   const pct = plan.nextMilestonePct ?? 0
 
   return (
+    // The whole card opens the project: the title is a real link (so keyboard
+    // users can focus it and screen readers read it as a link to the project),
+    // and its ::after overlay stretches across the relatively-positioned card so
+    // a tap or click anywhere opens it too. No other interactive controls sit on
+    // the card, so the overlay is safe.
     <div
       className={cn(
-        'flex h-full flex-col gap-2 rounded-xl border bg-card p-4 text-card-foreground shadow-sm',
+        'relative flex h-full flex-col gap-2 rounded-xl border bg-card p-4 text-card-foreground shadow-sm transition-colors hover:border-primary/50 focus-within:ring-2 focus-within:ring-ring',
         plan.archived && 'opacity-60',
       )}
     >
@@ -214,7 +219,7 @@ function PlanCard({ plan, lookups, today }: { plan: PlanListItem; lookups: Looku
 
       <Link
         href={`/tracker/plans/${plan.id}`}
-        className="text-base font-semibold leading-snug hover:underline"
+        className="text-base font-semibold leading-snug outline-none after:absolute after:inset-0 after:rounded-xl hover:underline"
       >
         {plan.name}
       </Link>
