@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getTrackerContext, isEditor, getGroupPeople, getTrackerHeaderData } from '@/lib/tracker/server'
-import { buildLookups, type LookupRow } from '@/lib/tracker/view'
+import { buildLookups, activeOptions, type LookupRow } from '@/lib/tracker/view'
 import Link from 'next/link'
 import TrackerHeader from '@/components/tracker/TrackerHeader'
 import PlanForm, { type PlanFormValues } from '@/components/tracker/PlanForm'
@@ -20,11 +20,12 @@ export default async function NewPlanPage() {
   if (!editor) redirect('/tracker/plans')
   const header = await getTrackerHeaderData(ctx)
 
+  // Load BOTH shown and hidden lookup values (existing records keep labels);
+  // the form's dropdowns use activeOptions() to show only the shown ones.
   const { data: lookupRows } = await supabase
     .from('tracker_lookups')
-    .select('list, key, label, colour, sort_order')
+    .select('list, key, label, colour, sort_order, active')
     .eq('group_id', groupId)
-    .eq('active', true)
   const lookups = buildLookups((lookupRows ?? []) as LookupRow[])
 
   const { data: planRows } = await supabase
@@ -75,9 +76,9 @@ export default async function NewPlanPage() {
       <PlanForm
         mode="new"
         initial={initial}
-        categories={(lookups.category ?? []).map((o) => ({ key: o.key, label: o.label }))}
-        statuses={(lookups.status ?? []).map((o) => ({ key: o.key, label: o.label }))}
-        regions={(lookups.region ?? []).map((o) => ({ key: o.key, label: o.label }))}
+        categories={activeOptions(lookups, 'category')}
+        statuses={activeOptions(lookups, 'status')}
+        regions={activeOptions(lookups, 'region')}
         priorities={[{ key: 'normal', label: 'Normal' }, { key: 'high', label: 'High' }]}
         parentOptions={(planRows ?? []).map((p) => ({ id: p.id as string, name: p.name as string }))}
         people={peopleOptions}

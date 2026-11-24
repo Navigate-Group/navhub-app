@@ -17,21 +17,47 @@ export type LookupRow = {
   label: string
   colour: string | null
   sort_order: number
+  /** Shown (true) or hidden (false). Optional so older callers still work. */
+  active?: boolean
 }
 
-/** A map from a lookup list name to its keys in sort order, with labels. */
-export type Lookups = Record<string, { key: string; label: string; sort_order: number; colour: string | null }[]>
+export type LookupOption = { key: string; label: string; sort_order: number; colour: string | null; active: boolean }
 
-/** Build a Lookups structure from the raw rows, sorted by sort_order. */
+/** A map from a lookup list name to its keys in sort order, with labels. */
+export type Lookups = Record<string, LookupOption[]>
+
+/**
+ * Build a Lookups structure from the raw rows, sorted by sort_order.
+ *
+ * IMPORTANT (spec): callers must load BOTH shown and hidden values so that
+ * existing records keep showing their label (via lookupLabel) even after a
+ * value is hidden. Dropdowns must then populate from activeOptions(), which
+ * filters to shown values only. Rows missing `active` are treated as shown.
+ */
 export function buildLookups(rows: LookupRow[]): Lookups {
   const out: Lookups = {}
   for (const r of rows) {
-    ;(out[r.list] ??= []).push({ key: r.key, label: r.label, sort_order: r.sort_order, colour: r.colour })
+    ;(out[r.list] ??= []).push({
+      key: r.key,
+      label: r.label,
+      sort_order: r.sort_order,
+      colour: r.colour,
+      active: r.active ?? true,
+    })
   }
   for (const list of Object.keys(out)) {
     out[list].sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label))
   }
   return out
+}
+
+/**
+ * The shown (active) values for a list, in sort order — use this for every
+ * choice control (dropdown / picker). Hidden values are excluded here but
+ * stay available to lookupLabel so existing records keep their labels.
+ */
+export function activeOptions(lookups: Lookups, list: string): { key: string; label: string }[] {
+  return (lookups[list] ?? []).filter((o) => o.active).map((o) => ({ key: o.key, label: o.label }))
 }
 
 /** Label for a key in a lookup list, falling back to the raw key. */

@@ -8,9 +8,10 @@ type Tab = { href: string; label: string; soon?: boolean }
 
 /**
  * Shared tracker section tabs (design spec): My week · Projects · People ·
- * Weekly review · Settings. Only Projects is built; the other tabs carry a
- * small "Soon" badge and lead to a coming-soon placeholder. Settings is shown
- * only to Managers / Group Owners (the server passes `showSettings`).
+ * Weekly review · Settings. Projects and Settings are built; People and Weekly
+ * review carry a small "Soon" badge and lead to a coming-soon placeholder.
+ * Settings is shown only to Managers / Group Owners (the server passes
+ * `showSettings`).
  * Horizontally scrollable on a phone. Colours follow the group theme via
  * `--primary` / `text-foreground`.
  *
@@ -29,7 +30,7 @@ export default function TrackerTabs({
     { href: '/tracker/plans', label: 'Projects' },
     { href: '/tracker/people', label: 'People', soon: true },
     { href: '/tracker/weekly-review', label: 'Weekly review', soon: true },
-    ...(showSettings ? [{ href: '/tracker/settings', label: 'Settings', soon: true }] : []),
+    ...(showSettings ? [{ href: '/tracker/settings', label: 'Settings' }] : []),
   ]
 
   return (
