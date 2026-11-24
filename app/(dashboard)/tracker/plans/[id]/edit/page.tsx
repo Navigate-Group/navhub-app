@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getTrackerContext, isEditor, canAccess, getGroupPeople, getTrackerHeaderData } from '@/lib/tracker/server'
 import Link from 'next/link'
-import { buildLookups, lookupLabel, activeOptions, type LookupRow } from '@/lib/tracker/view'
+import { buildLookups, lookupLabel, optionsWithCurrent, type LookupRow } from '@/lib/tracker/view'
 import TrackerHeader from '@/components/tracker/TrackerHeader'
 import PlanForm, { type PlanFormValues } from '@/components/tracker/PlanForm'
 
@@ -115,9 +115,9 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
         mode="edit"
         planId={planId}
         initial={initial}
-        categories={activeOptions(lookups, 'category')}
-        statuses={activeOptions(lookups, 'status')}
-        regions={activeOptions(lookups, 'region')}
+        categories={optionsWithCurrent(lookups, 'category', plan.category as string | null)}
+        statuses={optionsWithCurrent(lookups, 'status', plan.status as string | null)}
+        regions={optionsWithCurrent(lookups, 'region', plan.region as string | null)}
         priorities={[{ key: 'normal', label: 'Normal' }, { key: 'high', label: 'High' }]}
         parentOptions={parentOptions}
         people={peopleOptions}

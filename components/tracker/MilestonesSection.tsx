@@ -177,6 +177,7 @@ export default function MilestonesSection({
           priorities={priorities}
           people={people}
           canEditBaseline={editing.canEditBaseline}
+          currentStatusLabel={editing.statusLabel}
         />
       )}
 

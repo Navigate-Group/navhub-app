@@ -4,6 +4,13 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { formatDate, daysBetweenISO } from '@/lib/tracker/view'
 
 /**
@@ -57,6 +64,17 @@ export type MyWeekGroups = {
   calls: MyWeekAction[]
 }
 
+export type CallContactProject = { id: string; name: string }
+
+/** An external contact on one of the user's projects, overdue for a call. */
+export type CallContact = {
+  id: string
+  name: string
+  org: string | null
+  lastContact: string | null
+  projects: CallContactProject[]
+}
+
 type Quick = 'done' | 'plus_day' | 'plus_week' | 'waiting' | 'back_to_me'
 
 export default function MyWeek({
@@ -64,16 +82,74 @@ export default function MyWeek({
   groups,
   today,
   chaserDays,
+  followUpDays,
+  callContacts = [],
+  currentUserId,
 }: {
   tiles: MyWeekTiles
   groups: MyWeekGroups
   today: string
   chaserDays: number
+  followUpDays: number
+  callContacts?: CallContact[]
+  currentUserId: string
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // "+ Call" from a contact: create a Call action due today on one of the
+  // contact's projects. When there's more than one, a small picker asks which.
+  const [callBusyId, setCallBusyId] = useState<string | null>(null)
+  const [callError, setCallError] = useState<string | null>(null)
+  const [pickProjectFor, setPickProjectFor] = useState<CallContact | null>(null)
+  const [calledIds, setCalledIds] = useState<Set<string>>(new Set())
+
+  async function createCall(c: CallContact, projectId: string) {
+    setCallBusyId(c.id)
+    setCallError(null)
+    try {
+      const res = await fetch('/api/tracker/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_id: projectId,
+          title: `Call ${c.name}`,
+          type: 'call',
+          status: 'open',
+          due_on: today,
+          assignee_id: currentUserId,
+          contact_id: c.id,
+        }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        setCallError(b.error || 'Could not create the call')
+      } else {
+        setPickProjectFor(null)
+        setCalledIds((prev) => new Set(prev).add(c.id))
+        startTransition(() => {
+          router.refresh()
+        })
+      }
+    } catch {
+      setCallError('Could not create the call')
+    } finally {
+      setCallBusyId(null)
+    }
+  }
+
+  function onAddCall(c: CallContact) {
+    setCallError(null)
+    if (c.projects.length === 0) return
+    if (c.projects.length === 1) {
+      void createCall(c, c.projects[0].id)
+      return
+    }
+    setPickProjectFor(c)
+  }
+
+  const visibleCallContacts = callContacts.filter((c) => !calledIds.has(c.id))
   // Optimistically removed action ids: a quick button (Done, +1 day, +1 week,
   // Waiting, Back to me) moves the action out of its current bucket, so we hide
   // it from the lists straight away and let the quiet router.refresh() re-place
@@ -192,7 +268,7 @@ export default function MyWeek({
         </p>
       )}
 
-      {totalOpen === 0 ? (
+      {totalOpen === 0 && visibleCallContacts.length === 0 ? (
         <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm">
           <p className="text-sm text-muted-foreground">
             Nothing on your list. Actions assigned to you will appear here.
@@ -255,14 +331,29 @@ export default function MyWeek({
 
             <section aria-label="Calls to make" className="space-y-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Calls to make · {visibleGroups.calls.length}
+                Calls to make · {visibleGroups.calls.length + visibleCallContacts.length}
               </h2>
-              {visibleGroups.calls.length === 0 ? (
+              {callError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {callError}
+                </p>
+              )}
+              {visibleGroups.calls.length === 0 && visibleCallContacts.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No calls to make.</p>
               ) : (
                 <ul className="space-y-2">
                   {visibleGroups.calls.map((a) => (
                     <CallCard key={a.id} action={a} />
+                  ))}
+                  {visibleCallContacts.map((c) => (
+                    <ContactCallCard
+                      key={c.id}
+                      contact={c}
+                      today={today}
+                      followUpDays={followUpDays}
+                      busy={callBusyId === c.id}
+                      onCall={() => onAddCall(c)}
+                    />
                   ))}
                 </ul>
               )}
@@ -270,7 +361,64 @@ export default function MyWeek({
           </aside>
         </div>
       )}
+
+      {/* Project picker when a contact is on more than one of the user's projects */}
+      <Dialog open={pickProjectFor !== null} onOpenChange={(o) => !o && setPickProjectFor(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Which project is this call for?</DialogTitle>
+          </DialogHeader>
+          <ul className="space-y-1">
+            {pickProjectFor?.projects.map((pr) => (
+              <li key={pr.id}>
+                <button
+                  type="button"
+                  onClick={() => pickProjectFor && createCall(pickProjectFor, pr.id)}
+                  disabled={callBusyId === pickProjectFor?.id}
+                  className="w-full rounded-md border px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-50"
+                >
+                  {pr.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+function ContactCallCard({
+  contact,
+  today,
+  followUpDays,
+  busy,
+  onCall,
+}: {
+  contact: CallContact
+  today: string
+  followUpDays: number
+  busy: boolean
+  onCall: () => void
+}) {
+  const days = contact.lastContact ? daysBetweenISO(contact.lastContact, today) : null
+  const overdueLine =
+    days == null ? 'Never contacted' : `Not spoken to for ${days} day${days === 1 ? '' : 's'}`
+  return (
+    <li className="space-y-1.5 rounded-xl border bg-card p-3 text-card-foreground shadow-sm">
+      <div className="text-sm font-medium leading-snug">{contact.name}</div>
+      <p className="text-xs text-muted-foreground">
+        <span className={cn((days == null || days >= followUpDays) && 'font-medium text-red-600 dark:text-red-400')}>
+          {overdueLine}
+        </span>
+        {contact.org && <span> · {contact.org}</span>}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        <Button size="sm" variant="outline" disabled={busy} onClick={onCall}>
+          + Call
+        </Button>
+      </div>
+    </li>
   )
 }
 

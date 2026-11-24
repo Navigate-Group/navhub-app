@@ -2,8 +2,14 @@ import { redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getTrackerContext, getTrackerHeaderData } from '@/lib/tracker/server'
 import TrackerHeader from '@/components/tracker/TrackerHeader'
-import MyWeek, { type MyWeekAction, type MyWeekGroups, type MyWeekTiles } from '@/components/tracker/MyWeek'
-import { buildLookups, lookupLabel, type LookupRow } from '@/lib/tracker/view'
+import MyWeek, {
+  type MyWeekAction,
+  type MyWeekGroups,
+  type MyWeekTiles,
+  type CallContact,
+  type CallContactProject,
+} from '@/components/tracker/MyWeek'
+import { buildLookups, lookupLabel, daysBetweenISO, type LookupRow } from '@/lib/tracker/view'
 import {
   myWeek,
   DEFAULT_SETTINGS,
@@ -45,12 +51,15 @@ export default async function MyWeekPage() {
     { data: countsRow },
     { data: planRows },
     { data: actionRows },
+    { data: contactRows },
+    { data: contactLinkRows },
   ] = await Promise.all([
     getTrackerHeaderData(ctx),
-    // Group settings (chaser days, time zone, week start) with the shared defaults.
+    // Group settings (chaser days, follow-up days, time zone, week start) with
+    // the shared defaults.
     supabase
       .from('tracker_settings')
-      .select('chaser_days, stale_days, week_start, time_zone')
+      .select('chaser_days, stale_days, contact_followup_days, week_start, time_zone')
       .eq('group_id', groupId)
       .maybeSingle(),
     // Today in the group's time zone (same helper the views use), so the list
@@ -85,6 +94,15 @@ export default async function MyWeekPage() {
       )
       .eq('group_id', groupId)
       .eq('assignee_id', userId),
+    // External contacts (non-archived) and their plan links — used to surface,
+    // in "Calls to make", contacts on the user's own projects not spoken to for
+    // the follow-up window (or ever). RLS scopes these to what the user sees.
+    supabase
+      .from('tracker_contacts')
+      .select('id, name, org, last_contact')
+      .eq('group_id', groupId)
+      .is('archived_at', null),
+    supabase.from('tracker_contact_plans').select('contact_id, plan_id').eq('group_id', groupId),
   ])
 
   const settings: TrackerSettings = {
@@ -171,6 +189,47 @@ export default async function MyWeekPage() {
     calls: week.calls.map(toView),
   }
 
+  // "Calls to make" also lists the user's own external contacts (on live
+  // projects they own or lead) not spoken to for the follow-up window, or ever.
+  const followUpDays =
+    typeof settingsRow?.contact_followup_days === 'number'
+      ? (settingsRow.contact_followup_days as number)
+      : 21
+
+  // Live projects (not archived) the user owns or leads → the "+ Call" target.
+  const myProjectIds = new Set(
+    (planRows ?? [])
+      .filter(
+        (p) =>
+          (p.archived_at as string | null) == null &&
+          ((p.owner_id as string) === userId || (p.lead_id as string | null) === userId),
+      )
+      .map((p) => p.id as string),
+  )
+
+  // Contact → the user's projects it's linked to.
+  const myProjectsByContact = new Map<string, CallContactProject[]>()
+  for (const l of contactLinkRows ?? []) {
+    const planId = l.plan_id as string
+    if (!myProjectIds.has(planId)) continue
+    const list = myProjectsByContact.get(l.contact_id as string) ?? []
+    list.push({ id: planId, name: planNameById.get(planId) ?? '' })
+    myProjectsByContact.set(l.contact_id as string, list)
+  }
+
+  const callContacts: CallContact[] = (contactRows ?? [])
+    .map((c) => ({
+      id: c.id as string,
+      name: c.name as string,
+      org: (c.org as string | null) ?? null,
+      lastContact: (c.last_contact as string | null) ?? null,
+      projects: myProjectsByContact.get(c.id as string) ?? [],
+    }))
+    // Only contacts on one of the user's projects, and only those overdue.
+    .filter((c) => c.projects.length > 0)
+    .filter((c) => c.lastContact == null || daysBetweenISO(c.lastContact, today) >= followUpDays)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
   // The group's day and date in its time zone, e.g. "Monday, 3 Jun 2026".
   const dayAndDate = new Intl.DateTimeFormat('en-GB', {
     timeZone: settings.timeZone,
@@ -187,7 +246,15 @@ export default async function MyWeekPage() {
         title="My week"
         showSettings={header.showSettings}
       />
-      <MyWeek tiles={tiles} groups={groups} today={today} chaserDays={settings.chaserDays} />
+      <MyWeek
+        tiles={tiles}
+        groups={groups}
+        today={today}
+        chaserDays={settings.chaserDays}
+        followUpDays={followUpDays}
+        callContacts={callContacts}
+        currentUserId={userId}
+      />
     </>
   )
 }

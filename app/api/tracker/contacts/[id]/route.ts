@@ -29,6 +29,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if ('phone' in body) patch.phone = strOrNull(body.phone)
   if ('email' in body) patch.email = strOrNull(body.email)
   if ('notes' in body) patch.notes = strOrNull(body.notes)
+  // last_contact: a 'YYYY-MM-DD' date, or null to clear. The People page's
+  // "Contacted today" sets this to today's date in the group's time zone.
+  if ('last_contact' in body) patch.last_contact = strOrNull(body.last_contact)
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })

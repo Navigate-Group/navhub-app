@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server'
 import { getTrackerContext } from '@/lib/tracker/server'
 import { writeErrorResponse, strOrNull } from '@/lib/tracker/api'
 
-// POST /api/tracker/contacts — add a contact to a project.
-// Either link an existing contact ({ plan_id, contact_id }) or create a new one
-// and link it ({ plan_id, name, org?, role?, phone?, email?, notes? }).
+// POST /api/tracker/contacts — add a contact.
+// Three shapes:
+//   • link an existing contact to a project   ({ plan_id, contact_id })
+//   • create a new contact and link it        ({ plan_id, name, org?, … })
+//   • create a new, unlinked group contact    ({ name, org?, … }) — used by the
+//     People page's "Add contact", which isn't tied to a single project.
 // RLS (082) requires edit access on the plan (to link) and add-contact rights
 // (editor, or a member with edit access on a plan) to create.
 export async function POST(request: Request) {
@@ -20,9 +23,12 @@ export async function POST(request: Request) {
   }
 
   const planId = strOrNull(body.plan_id)
-  if (!planId) return NextResponse.json({ error: 'plan_id is required' }, { status: 422 })
-
   let contactId = strOrNull(body.contact_id)
+
+  // Linking an existing contact needs a project to link it to.
+  if (!planId && contactId) {
+    return NextResponse.json({ error: 'plan_id is required' }, { status: 422 })
+  }
 
   // Create a new contact when no existing one was chosen.
   if (!contactId) {
@@ -45,6 +51,12 @@ export async function POST(request: Request) {
 
     if (createErr) return writeErrorResponse(createErr)
     contactId = created.id as string
+  }
+
+  // No project given → create-only (People page's "Add contact"); nothing to
+  // link. The contact lands in the group's list, ready to be linked later.
+  if (!planId) {
+    return NextResponse.json({ data: { id: contactId } }, { status: 201 })
   }
 
   // Link the contact to the plan (idempotent). The link table has no UPDATE
