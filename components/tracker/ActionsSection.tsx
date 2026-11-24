@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -66,6 +66,7 @@ export default function ActionsSection({
   contacts: { id: string; name: string }[]
 }) {
   const router = useRouter()
+  const [, startTransition] = useTransition()
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<ActionItem | null>(null)
   const [deleting, setDeleting] = useState<ActionItem | null>(null)
@@ -123,12 +124,17 @@ export default function ActionsSection({
         setError(body.error || 'Could not update the action')
       } else {
         // Refresh the rest of the page quietly so counts and warnings catch up,
-        // then drop the override now the server rows carry the change.
-        router.refresh()
-        setOverrides((o) => {
-          const next = { ...o }
-          delete next[a.id]
-          return next
+        // then drop the override now the server rows carry the change. Both run
+        // in one transition so the override only clears once the fresh rows have
+        // arrived — otherwise the row would briefly jump back to its old place.
+        // Plain (not async) callback: React 18 / Next 14 don't await it.
+        startTransition(() => {
+          router.refresh()
+          setOverrides((o) => {
+            const next = { ...o }
+            delete next[a.id]
+            return next
+          })
         })
       }
     } catch {
