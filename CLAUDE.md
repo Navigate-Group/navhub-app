@@ -770,6 +770,12 @@ Three tabs: **Display** | **Group** | **Members**
 ### Members email lookup
 `auth.users` is not queryable via anon/server client. Use `admin.auth.admin.getUserById(uid)` in parallel for each member. Acceptable for small groups (typical: < 50 members).
 
+### Tracker (Projects) page performance
+- **Parallel reads.** The Project detail, Projects list, My week and Edit pages (`app/(dashboard)/tracker/...`) first find the project, then run every independent read together with one `Promise.all` instead of awaiting them one after another. Only the first query (finding the plan) blocks the rest.
+- **People's names once per load.** `getGroupPeople` (`lib/tracker/server.ts`) resolves member display names with a **single** `admin.auth.admin.listUsers({ perPage: 1000 })` call (same bulk pattern as the invites/admin routes) and an id→name map, rather than one `getUserById` per member. Same name precedence (`full_name` → `display_name` → `email`).
+- **Optimistic quick buttons.** The action quick buttons (Done, +1 day, +1 week, Waiting, Back to me, Reopen) in `components/tracker/ActionsSection.tsx` and `components/tracker/MyWeek.tsx` update the UI immediately, PATCH in the background, then `router.refresh()` quietly so counts/warnings catch up. A failed save reverts the optimistic change and shows the error; the pressed action's buttons stay disabled (`busyId`) during its own save. ActionsSection keeps an `overrides` map (the changed fields, re-sorted open-first-then-done to match the server); MyWeek hides the acted-on action from its buckets until the refresh re-places it.
+- **Two API fixes.** `PATCH /api/tracker/actions/[id]` reads the action's prior status and only bumps a call/email contact's `last_contact` when the action *becomes* Done (not when re-saving an already-done action). `POST /api/tracker/contacts` links with `upsert(..., { onConflict: 'contact_id,plan_id', ignoreDuplicates: true })` so re-linking an already-linked contact is a no-op success (the `tracker_contact_plans` table has no UPDATE RLS policy, so an upsert that tried to UPDATE was refused).
+
 ### Last super_admin protection
 `PATCH` and `DELETE` on `/api/groups/[id]/members/[userId]` check if the target user is the only remaining `super_admin`. Returns 422 if so.
 

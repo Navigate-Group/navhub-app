@@ -73,10 +73,21 @@ export default function MyWeek({
   const router = useRouter()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Optimistically removed action ids: a quick button (Done, +1 day, +1 week,
+  // Waiting, Back to me) moves the action out of its current bucket, so we hide
+  // it from the lists straight away and let the quiet router.refresh() re-place
+  // it. On failure we un-hide it and show the error.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
 
   async function quick(a: MyWeekAction, q: Quick) {
     setBusyId(a.id)
     setError(null)
+    // Move the action out of its current list straight away.
+    setHiddenIds((prev) => {
+      const next = new Set(prev)
+      next.add(a.id)
+      return next
+    })
     try {
       const res = await fetch(`/api/tracker/actions/${a.id}`, {
         method: 'PATCH',
@@ -85,37 +96,71 @@ export default function MyWeek({
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
+        // Put the action back and show the error.
+        setHiddenIds((prev) => {
+          const next = new Set(prev)
+          next.delete(a.id)
+          return next
+        })
         setError(body.error || 'Could not update the action')
       } else {
-        // Re-read so the action moves to its new bucket and the tiles update.
+        // Re-read quietly so the action moves to its new bucket and the tiles
+        // update, then drop the optimistic hide now the server rows agree.
         router.refresh()
+        setHiddenIds((prev) => {
+          const next = new Set(prev)
+          next.delete(a.id)
+          return next
+        })
       }
     } catch {
+      setHiddenIds((prev) => {
+        const next = new Set(prev)
+        next.delete(a.id)
+        return next
+      })
       setError('Could not update the action')
     } finally {
       setBusyId(null)
     }
   }
 
+  // Hide optimistically-removed actions from every list until the quiet refresh
+  // reconciles.
+  const visibleGroups: MyWeekGroups = useMemo(() => {
+    if (hiddenIds.size === 0) return groups
+    const keep = (items: MyWeekAction[]) => items.filter((a) => !hiddenIds.has(a.id))
+    return {
+      overdue: keep(groups.overdue),
+      today: keep(groups.today),
+      restOfWeek: keep(groups.restOfWeek),
+      nextWeek: keep(groups.nextWeek),
+      later: keep(groups.later),
+      noDate: keep(groups.noDate),
+      waiting: keep(groups.waiting),
+      calls: keep(groups.calls),
+    }
+  }, [groups, hiddenIds])
+
   const totalOpen =
-    groups.overdue.length +
-    groups.today.length +
-    groups.restOfWeek.length +
-    groups.nextWeek.length +
-    groups.later.length +
-    groups.noDate.length +
-    groups.waiting.length
+    visibleGroups.overdue.length +
+    visibleGroups.today.length +
+    visibleGroups.restOfWeek.length +
+    visibleGroups.nextWeek.length +
+    visibleGroups.later.length +
+    visibleGroups.noDate.length +
+    visibleGroups.waiting.length
 
   const listGroups = useMemo(
     () => [
-      { key: 'overdue', label: 'Overdue', items: groups.overdue, danger: true },
-      { key: 'today', label: 'Today', items: groups.today, danger: false },
-      { key: 'restOfWeek', label: 'Rest of this week', items: groups.restOfWeek, danger: false },
-      { key: 'nextWeek', label: 'Next week', items: groups.nextWeek, danger: false },
-      { key: 'later', label: 'Later', items: groups.later, danger: false },
-      { key: 'noDate', label: 'No date yet', items: groups.noDate, danger: false },
+      { key: 'overdue', label: 'Overdue', items: visibleGroups.overdue, danger: true },
+      { key: 'today', label: 'Today', items: visibleGroups.today, danger: false },
+      { key: 'restOfWeek', label: 'Rest of this week', items: visibleGroups.restOfWeek, danger: false },
+      { key: 'nextWeek', label: 'Next week', items: visibleGroups.nextWeek, danger: false },
+      { key: 'later', label: 'Later', items: visibleGroups.later, danger: false },
+      { key: 'noDate', label: 'No date yet', items: visibleGroups.noDate, danger: false },
     ],
-    [groups],
+    [visibleGroups],
   )
 
   return (
@@ -181,13 +226,13 @@ export default function MyWeek({
           <aside className="space-y-6">
             <section aria-label="Waiting on others" className="space-y-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Waiting on others · {groups.waiting.length}
+                Waiting on others · {visibleGroups.waiting.length}
               </h2>
-              {groups.waiting.length === 0 ? (
+              {visibleGroups.waiting.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nothing waiting.</p>
               ) : (
                 <ul className="space-y-2">
-                  {groups.waiting.map((a) => (
+                  {visibleGroups.waiting.map((a) => (
                     <WaitingCard
                       key={a.id}
                       action={a}
@@ -203,13 +248,13 @@ export default function MyWeek({
 
             <section aria-label="Calls to make" className="space-y-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Calls to make · {groups.calls.length}
+                Calls to make · {visibleGroups.calls.length}
               </h2>
-              {groups.calls.length === 0 ? (
+              {visibleGroups.calls.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No calls to make.</p>
               ) : (
                 <ul className="space-y-2">
-                  {groups.calls.map((a) => (
+                  {visibleGroups.calls.map((a) => (
                     <CallCard key={a.id} action={a} />
                   ))}
                 </ul>

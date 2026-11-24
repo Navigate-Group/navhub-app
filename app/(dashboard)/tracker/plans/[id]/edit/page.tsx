@@ -29,41 +29,45 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
     canAccess(supabase, planId, 'edit'),
   ])
   if (!canEdit) redirect(`/tracker/plans/${planId}`)
-  const header = await getTrackerHeaderData(ctx)
 
-  const { data: lookupRows } = await supabase
-    .from('tracker_lookups')
-    .select('list, key, label, colour, sort_order')
-    .eq('group_id', groupId)
-    .eq('active', true)
+  // The remaining reads don't depend on each other, so run them at the same
+  // time (Promise.all) rather than one after another.
+  const [header, { data: lookupRows }, { data: allPlans }, people, { data: memberRows }] = await Promise.all([
+    getTrackerHeaderData(ctx),
+    supabase
+      .from('tracker_lookups')
+      .select('list, key, label, colour, sort_order')
+      .eq('group_id', groupId)
+      .eq('active', true),
+    // Candidate parents = same group, not itself and not one of its own
+    // sub-projects (the DB also rejects self-parenting; this keeps the picker
+    // sensible — descendants are excluded).
+    supabase
+      .from('tracker_project_plans')
+      .select('id, name, parent_id')
+      .eq('group_id', groupId)
+      .is('archived_at', null),
+    getGroupPeople(supabase, groupId).then((p) => p ?? []),
+    // Current members (role = 'member'); the lead stays in lead_id.
+    supabase
+      .from('tracker_plan_members')
+      .select('user_id, role')
+      .eq('plan_id', planId)
+      .eq('role', 'member'),
+  ])
+
   const lookups = buildLookups((lookupRows ?? []) as LookupRow[])
-
-  // Candidate parents = same group, not itself and not one of its own
-  // sub-projects (the DB also rejects self-parenting; this keeps the picker
-  // sensible — descendants are excluded).
-  const { data: allPlans } = await supabase
-    .from('tracker_project_plans')
-    .select('id, name, parent_id')
-    .eq('group_id', groupId)
-    .is('archived_at', null)
 
   const descendants = collectDescendants(planId, (allPlans ?? []) as { id: string; parent_id: string | null }[])
   const parentOptions = (allPlans ?? [])
     .filter((p) => p.id !== planId && !descendants.has(p.id as string))
     .map((p) => ({ id: p.id as string, name: p.name as string }))
 
-  const people = (await getGroupPeople(supabase, groupId)) ?? []
   const peopleOptions = people.map((p) => ({ id: p.id, name: p.name || '—' }))
   const managers = people
     .filter((p) => MANAGER_ROLES.includes(p.role))
     .map((p) => ({ id: p.id, name: p.name || '—' }))
 
-  // Current members (role = 'member'); the lead stays in lead_id.
-  const { data: memberRows } = await supabase
-    .from('tracker_plan_members')
-    .select('user_id, role')
-    .eq('plan_id', planId)
-    .eq('role', 'member')
   const memberIds = (memberRows ?? []).map((m) => m.user_id as string)
 
   const initial: PlanFormValues = {

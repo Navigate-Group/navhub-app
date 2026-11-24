@@ -146,21 +146,28 @@ export async function getGroupPeople(
 
   if (error) return []
 
-  const people: GroupPerson[] = await Promise.all(
-    (userGroups ?? []).map(async (ug: { user_id: string; role: string }) => {
-      let name = ''
-      try {
-        const { data } = await admin.auth.admin.getUserById(ug.user_id)
-        const meta = (data.user?.user_metadata ?? {}) as Record<string, unknown>
-        const full = typeof meta.full_name === 'string' ? meta.full_name.trim() : ''
-        const display = typeof meta.display_name === 'string' ? meta.display_name.trim() : ''
-        name = full || display || data.user?.email || ''
-      } catch {
-        name = ''
-      }
-      return { id: ug.user_id, name, role: ug.role }
-    }),
-  )
+  // Resolve display names once with a single listUsers call (perPage 1000, the
+  // same bulk pattern the Members / invites routes use) instead of one
+  // getUserById per member. Build an id→name map, then look each member up in
+  // it — same name precedence as before (full_name → display_name → email).
+  const nameById = new Map<string, string>()
+  try {
+    const { data: userList } = await admin.auth.admin.listUsers({ perPage: 1000 })
+    for (const u of userList?.users ?? []) {
+      const meta = (u.user_metadata ?? {}) as Record<string, unknown>
+      const full = typeof meta.full_name === 'string' ? meta.full_name.trim() : ''
+      const display = typeof meta.display_name === 'string' ? meta.display_name.trim() : ''
+      nameById.set(u.id, full || display || u.email || '')
+    }
+  } catch {
+    // Leave the map empty; members fall back to '' (— in the UI), as before.
+  }
+
+  const people: GroupPerson[] = (userGroups ?? []).map((ug: { user_id: string; role: string }) => ({
+    id: ug.user_id,
+    name: nameById.get(ug.user_id) ?? '',
+    role: ug.role,
+  }))
 
   return people
 }
