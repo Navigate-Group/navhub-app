@@ -59,12 +59,12 @@ export default async function ImportPlansPage() {
     )
   }
 
-  // Labels for the preview's category/status keys.
+  // Labels for the preview's category/status keys. Load BOTH shown and hidden
+  // values so a preview row referencing a hidden key still shows its label.
   const { data: lookupRows } = await supabase
     .from('tracker_lookups')
-    .select('list, key, label, colour, sort_order')
+    .select('list, key, label, colour, sort_order, active')
     .eq('group_id', groupId)
-    .eq('active', true)
   const lookups = buildLookups((lookupRows ?? []) as LookupRow[])
 
   const categoryLabels: LookupOption[] = (lookups.category ?? []).map((o) => ({ key: o.key, label: o.label }))

@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getTrackerContext, isEditor, canAccess, getGroupPeople, getTrackerHeaderData } from '@/lib/tracker/server'
 import Link from 'next/link'
-import { buildLookups, lookupLabel, type LookupRow } from '@/lib/tracker/view'
+import { buildLookups, lookupLabel, activeOptions, type LookupRow } from '@/lib/tracker/view'
 import TrackerHeader from '@/components/tracker/TrackerHeader'
 import PlanForm, { type PlanFormValues } from '@/components/tracker/PlanForm'
 
@@ -34,11 +34,12 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
   // time (Promise.all) rather than one after another.
   const [header, { data: lookupRows }, { data: allPlans }, people, { data: memberRows }] = await Promise.all([
     getTrackerHeaderData(ctx),
+    // Load BOTH shown and hidden lookup values (existing records keep labels);
+    // the form's dropdowns use activeOptions() to show only the shown ones.
     supabase
       .from('tracker_lookups')
-      .select('list, key, label, colour, sort_order')
-      .eq('group_id', groupId)
-      .eq('active', true),
+      .select('list, key, label, colour, sort_order, active')
+      .eq('group_id', groupId),
     // Candidate parents = same group, not itself and not one of its own
     // sub-projects (the DB also rejects self-parenting; this keeps the picker
     // sensible — descendants are excluded).
@@ -114,9 +115,9 @@ export default async function EditPlanPage({ params }: { params: { id: string } 
         mode="edit"
         planId={planId}
         initial={initial}
-        categories={(lookups.category ?? []).map((o) => ({ key: o.key, label: o.label }))}
-        statuses={(lookups.status ?? []).map((o) => ({ key: o.key, label: o.label }))}
-        regions={(lookups.region ?? []).map((o) => ({ key: o.key, label: o.label }))}
+        categories={activeOptions(lookups, 'category')}
+        statuses={activeOptions(lookups, 'status')}
+        regions={activeOptions(lookups, 'region')}
         priorities={[{ key: 'normal', label: 'Normal' }, { key: 'high', label: 'High' }]}
         parentOptions={parentOptions}
         people={peopleOptions}

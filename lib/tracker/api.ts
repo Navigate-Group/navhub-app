@@ -41,6 +41,30 @@ export function intInRange(v: unknown, min: number, max: number): number | null 
   return Math.max(min, Math.min(max, Math.round(n)))
 }
 
+/**
+ * Turn a label into a lookup key: lowercase, trimmed, non-alphanumerics folded
+ * to single underscores, no leading/trailing underscores. Returns '' when the
+ * label has no usable characters (e.g. only punctuation).
+ */
+export function keyFromLabel(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+/**
+ * Make a key unique within a list by appending _2, _3, … when it already
+ * exists (case-insensitive). `existing` is the set of keys already in the list.
+ */
+export function uniqueKey(base: string, existing: Set<string>): string {
+  if (!existing.has(base)) return base
+  let n = 2
+  while (existing.has(`${base}_${n}`)) n += 1
+  return `${base}_${n}`
+}
+
 /** A de-duplicated array of non-empty trimmed strings, or null when not an array. */
 export function strArray(v: unknown): string[] | null {
   if (!Array.isArray(v)) return null

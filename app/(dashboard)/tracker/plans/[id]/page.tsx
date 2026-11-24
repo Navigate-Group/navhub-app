@@ -6,6 +6,7 @@ import TrackerHeader from '@/components/tracker/TrackerHeader'
 import {
   buildLookups,
   lookupLabel,
+  activeOptions,
   formatDate,
   formatDateTime,
   isFolderLink,
@@ -78,10 +79,12 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   ] = await Promise.all([
     getGroupPeople(supabase, groupId).then((p) => p ?? []),
     supabase
+      // Load BOTH shown and hidden lookup values (existing records keep their
+      // labels); the choice controls below use activeOptions() to show only the
+      // shown values.
       .from('tracker_lookups')
-      .select('list, key, label, colour, sort_order')
-      .eq('group_id', groupId)
-      .eq('active', true),
+      .select('list, key, label, colour, sort_order, active')
+      .eq('group_id', groupId),
     supabase
       .from('tracker_project_plans')
       .select('id, name, region, status')
@@ -216,13 +219,13 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   )
   const latestActivity = historyItems[0] ?? null
 
-  const sourceOptions = (lookups.source ?? []).map((s) => ({ key: s.key, label: s.label }))
-  const statusOptions = (lookups.status ?? []).map((s) => ({ key: s.key, label: s.label }))
+  const sourceOptions = activeOptions(lookups, 'source')
+  const statusOptions = activeOptions(lookups, 'status')
 
   // ── Milestone / action view-models for the editable sections (P6) ──────────
   const peopleOptions = people.map((p) => ({ id: p.id, name: p.name || '—' }))
-  const milestoneStatusOptions = (lookups.milestone_status ?? []).map((s) => ({ key: s.key, label: s.label }))
-  const actionTypeOptions = (lookups.action_type ?? []).map((s) => ({ key: s.key, label: s.label }))
+  const milestoneStatusOptions = activeOptions(lookups, 'milestone_status')
+  const actionTypeOptions = activeOptions(lookups, 'action_type')
   const priorityOptions = [
     { key: 'normal', label: 'Normal' },
     { key: 'high', label: 'High' },

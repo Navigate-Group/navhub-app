@@ -63,12 +63,13 @@ export default async function PlansPage() {
   ] = await Promise.all([
     isEditor(supabase, groupId),
     getTrackerHeaderData(ctx),
-    // Lookups for labels and category order.
+    // Lookups for labels and category order. Load BOTH shown and hidden values
+    // so existing records keep their labels even after a value is hidden; this
+    // page only labels/groups (no dropdowns), so no active filter is needed.
     supabase
       .from('tracker_lookups')
-      .select('list, key, label, colour, sort_order')
-      .eq('group_id', groupId)
-      .eq('active', true),
+      .select('list, key, label, colour, sort_order, active')
+      .eq('group_id', groupId),
     // Plans (RLS-scoped to the group). Load all; filter client-side.
     supabase
       .from('tracker_project_plans')

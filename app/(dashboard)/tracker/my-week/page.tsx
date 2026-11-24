@@ -56,12 +56,12 @@ export default async function MyWeekPage() {
     // Today in the group's time zone (same helper the views use), so the list
     // buckets match the tile counts.
     supabase.rpc('tracker_today', { p_group_id: groupId }),
-    // Lookups for action type labels.
+    // Lookups for action type labels. Load BOTH shown and hidden values so
+    // existing actions keep their type label even after a type is hidden.
     supabase
       .from('tracker_lookups')
-      .select('list, key, label, colour, sort_order')
-      .eq('group_id', groupId)
-      .eq('active', true),
+      .select('list, key, label, colour, sort_order, active')
+      .eq('group_id', groupId),
     // Tiles: straight from the database view, for this person in this group.
     supabase
       .from('tracker_v_action_counts')
