@@ -34,58 +34,46 @@ export default async function MyWeekPage() {
   if (!ctx) redirect('/home')
   const { supabase, groupId, userId } = ctx
 
-  const header = await getTrackerHeaderData(ctx)
-
-  // Group settings (chaser days, time zone, week start) with the shared defaults.
-  const { data: settingsRow } = await supabase
-    .from('tracker_settings')
-    .select('chaser_days, stale_days, week_start, time_zone')
-    .eq('group_id', groupId)
-    .maybeSingle()
-  const settings: TrackerSettings = {
-    chaserDays:
-      typeof settingsRow?.chaser_days === 'number' ? (settingsRow.chaser_days as number) : DEFAULT_SETTINGS.chaserDays,
-    staleDays:
-      typeof settingsRow?.stale_days === 'number' ? (settingsRow.stale_days as number) : DEFAULT_SETTINGS.staleDays,
-    weekStart: (settingsRow?.week_start as 'monday' | 'sunday' | null) ?? DEFAULT_SETTINGS.weekStart,
-    timeZone: (settingsRow?.time_zone as string | null) ?? DEFAULT_SETTINGS.timeZone,
-  }
-
-  // Today in the group's time zone (same helper the views use), so the list
-  // buckets match the tile counts.
-  const { data: todayVal } = await supabase.rpc('tracker_today', { p_group_id: groupId })
-  const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
-
-  // Lookups for action type labels.
-  const { data: lookupRows } = await supabase
-    .from('tracker_lookups')
-    .select('list, key, label, colour, sort_order')
-    .eq('group_id', groupId)
-    .eq('active', true)
-  const lookups = buildLookups((lookupRows ?? []) as LookupRow[])
-
-  // Tiles: straight from the database view, for this person in this group.
-  const { data: countsRow } = await supabase
-    .from('tracker_v_action_counts')
-    .select(
-      'overdue, due_this_week, waiting_on_others, calls_and_emails, plans_needing_attention, closed_this_week',
-    )
-    .eq('group_id', groupId)
-    .eq('user_id', userId)
-    .maybeSingle()
-  const tiles: MyWeekTiles = {
-    overdue: (countsRow?.overdue as number | null) ?? 0,
-    dueThisWeek: (countsRow?.due_this_week as number | null) ?? 0,
-    waitingOnOthers: (countsRow?.waiting_on_others as number | null) ?? 0,
-    callsAndEmails: (countsRow?.calls_and_emails as number | null) ?? 0,
-    plansNeedingAttention: (countsRow?.plans_needing_attention as number | null) ?? 0,
-    closedThisWeek: (countsRow?.closed_this_week as number | null) ?? 0,
-  }
-
-  // Raw rows for the shared myWeek() rule. RLS scopes these to the group; the
-  // rule drops archived rows and rows on archived plans, and keeps only this
-  // user's actions.
-  const [{ data: planRows }, { data: actionRows }] = await Promise.all([
+  // None of these reads depend on each other, so run them at the same time
+  // (Promise.all) rather than one after another — this is what makes My week
+  // open quickly.
+  const [
+    header,
+    { data: settingsRow },
+    { data: todayVal },
+    { data: lookupRows },
+    { data: countsRow },
+    { data: planRows },
+    { data: actionRows },
+  ] = await Promise.all([
+    getTrackerHeaderData(ctx),
+    // Group settings (chaser days, time zone, week start) with the shared defaults.
+    supabase
+      .from('tracker_settings')
+      .select('chaser_days, stale_days, week_start, time_zone')
+      .eq('group_id', groupId)
+      .maybeSingle(),
+    // Today in the group's time zone (same helper the views use), so the list
+    // buckets match the tile counts.
+    supabase.rpc('tracker_today', { p_group_id: groupId }),
+    // Lookups for action type labels.
+    supabase
+      .from('tracker_lookups')
+      .select('list, key, label, colour, sort_order')
+      .eq('group_id', groupId)
+      .eq('active', true),
+    // Tiles: straight from the database view, for this person in this group.
+    supabase
+      .from('tracker_v_action_counts')
+      .select(
+        'overdue, due_this_week, waiting_on_others, calls_and_emails, plans_needing_attention, closed_this_week',
+      )
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .maybeSingle(),
+    // Raw rows for the shared myWeek() rule. RLS scopes these to the group; the
+    // rule drops archived rows and rows on archived plans, and keeps only this
+    // user's actions.
     supabase
       .from('tracker_project_plans')
       .select('id, name, parent_id, status, owner_id, lead_id, updated_on, archived_at')
@@ -98,6 +86,28 @@ export default async function MyWeekPage() {
       .eq('group_id', groupId)
       .eq('assignee_id', userId),
   ])
+
+  const settings: TrackerSettings = {
+    chaserDays:
+      typeof settingsRow?.chaser_days === 'number' ? (settingsRow.chaser_days as number) : DEFAULT_SETTINGS.chaserDays,
+    staleDays:
+      typeof settingsRow?.stale_days === 'number' ? (settingsRow.stale_days as number) : DEFAULT_SETTINGS.staleDays,
+    weekStart: (settingsRow?.week_start as 'monday' | 'sunday' | null) ?? DEFAULT_SETTINGS.weekStart,
+    timeZone: (settingsRow?.time_zone as string | null) ?? DEFAULT_SETTINGS.timeZone,
+  }
+
+  const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
+
+  const lookups = buildLookups((lookupRows ?? []) as LookupRow[])
+
+  const tiles: MyWeekTiles = {
+    overdue: (countsRow?.overdue as number | null) ?? 0,
+    dueThisWeek: (countsRow?.due_this_week as number | null) ?? 0,
+    waitingOnOthers: (countsRow?.waiting_on_others as number | null) ?? 0,
+    callsAndEmails: (countsRow?.calls_and_emails as number | null) ?? 0,
+    plansNeedingAttention: (countsRow?.plans_needing_attention as number | null) ?? 0,
+    closedThisWeek: (countsRow?.closed_this_week as number | null) ?? 0,
+  }
 
   const planNameById = new Map<string, string>()
   for (const p of planRows ?? []) planNameById.set(p.id as string, (p.name as string) ?? '')

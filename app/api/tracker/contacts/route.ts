@@ -47,10 +47,16 @@ export async function POST(request: Request) {
     contactId = created.id as string
   }
 
-  // Link the contact to the plan (idempotent).
+  // Link the contact to the plan (idempotent). The link table has no UPDATE
+  // policy, so an upsert that tries to UPDATE an existing row is refused by RLS.
+  // ignoreDuplicates makes a conflict a no-op (ON CONFLICT DO NOTHING), so
+  // re-linking an already-linked contact quietly succeeds.
   const { error: linkErr } = await supabase
     .from('tracker_contact_plans')
-    .upsert({ contact_id: contactId, plan_id: planId, group_id: groupId }, { onConflict: 'contact_id,plan_id' })
+    .upsert(
+      { contact_id: contactId, plan_id: planId, group_id: groupId },
+      { onConflict: 'contact_id,plan_id', ignoreDuplicates: true },
+    )
 
   if (linkErr) return writeErrorResponse(linkErr)
   return NextResponse.json({ data: { id: contactId } }, { status: 201 })

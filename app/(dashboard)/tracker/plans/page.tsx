@@ -48,53 +48,61 @@ export default async function PlansPage() {
     )
   }
 
-  const [editor, header] = await Promise.all([
+  // These reads don't depend on each other, so run them all at the same time
+  // (Promise.all) rather than one after another — this is what makes the list
+  // open quickly.
+  const [
+    editor,
+    header,
+    { data: lookupRows },
+    { data: planRows },
+    { data: attentionRows },
+    { data: milestoneRows },
+    { data: milestoneTitles },
+    { data: todayVal },
+  ] = await Promise.all([
     isEditor(supabase, groupId),
     getTrackerHeaderData(ctx),
+    // Lookups for labels and category order.
+    supabase
+      .from('tracker_lookups')
+      .select('list, key, label, colour, sort_order')
+      .eq('group_id', groupId)
+      .eq('active', true),
+    // Plans (RLS-scoped to the group). Load all; filter client-side.
+    supabase
+      .from('tracker_project_plans')
+      .select('id, name, client, phase, region, category, parent_id, status, sort_order, archived_at')
+      .eq('group_id', groupId)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true }),
+    // Attention view (next action, last updated, flags, counts).
+    supabase
+      .from('tracker_v_plan_attention')
+      .select(
+        'plan_id, is_active, status, last_updated, open_actions, sub_plans, next_action_id, next_action_title, next_action_due, flag_status, flag_no_open_action, flag_overdue_action, flag_stale, needs_attention',
+      )
+      .eq('group_id', groupId),
+    // Earliest not-completed/cancelled milestone per plan (next milestone).
+    supabase
+      .from('tracker_v_milestone_progress')
+      .select('milestone_id, plan_id, status, due_on, done_actions, total_actions, progress_pct, days_slipped, overdue')
+      .eq('group_id', groupId),
+    // Milestone titles (the progress view has no title).
+    supabase
+      .from('tracker_milestones')
+      .select('id, title')
+      .eq('group_id', groupId)
+      .is('archived_at', null),
+    // Today (group time zone) via the DB helper, so labels match the views.
+    supabase.rpc('tracker_today', { p_group_id: groupId }),
   ])
 
-  // Lookups for labels and category order.
-  const { data: lookupRows } = await supabase
-    .from('tracker_lookups')
-    .select('list, key, label, colour, sort_order')
-    .eq('group_id', groupId)
-    .eq('active', true)
   const lookups = buildLookups((lookupRows ?? []) as LookupRow[])
-
-  // Plans (RLS-scoped to the group). Load all; filter client-side.
-  const { data: planRows } = await supabase
-    .from('tracker_project_plans')
-    .select('id, name, client, phase, region, category, parent_id, status, sort_order, archived_at')
-    .eq('group_id', groupId)
-    .order('sort_order', { ascending: true })
-    .order('name', { ascending: true })
-
-  // Attention view (next action, last updated, flags, counts).
-  const { data: attentionRows } = await supabase
-    .from('tracker_v_plan_attention')
-    .select(
-      'plan_id, is_active, status, last_updated, open_actions, sub_plans, next_action_id, next_action_title, next_action_due, flag_status, flag_no_open_action, flag_overdue_action, flag_stale, needs_attention',
-    )
-    .eq('group_id', groupId)
-
-  // Earliest not-completed/cancelled milestone per plan (next milestone).
-  const { data: milestoneRows } = await supabase
-    .from('tracker_v_milestone_progress')
-    .select('milestone_id, plan_id, status, due_on, done_actions, total_actions, progress_pct, days_slipped, overdue')
-    .eq('group_id', groupId)
-
-  // Milestone titles (the progress view has no title).
-  const { data: milestoneTitles } = await supabase
-    .from('tracker_milestones')
-    .select('id, title')
-    .eq('group_id', groupId)
-    .is('archived_at', null)
 
   const titleById = new Map<string, string>()
   for (const m of milestoneTitles ?? []) titleById.set(m.id as string, (m.title as string) ?? '')
 
-  // Today (group time zone) via the DB helper, so labels match the views.
-  const { data: todayVal } = await supabase.rpc('tracker_today', { p_group_id: groupId })
   const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
 
   const attentionByPlan = new Map<string, AttentionRow>()

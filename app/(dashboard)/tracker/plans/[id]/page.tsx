@@ -56,61 +56,110 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   ])
   const isOwner = plan.owner_id === userId
 
+  // The rest of the page's reads don't depend on each other — only on the plan
+  // we just found — so run them all at the same time (Promise.all) rather than
+  // one after another. This is the main win for how fast the page opens.
+  const [
+    people,
+    { data: lookupRows },
+    { data: subPlans },
+    { data: milestones },
+    { data: mProgress },
+    { data: actions },
+    { data: updates },
+    { data: contactLinks },
+    { data: commentRows },
+    { data: members },
+    { data: todayVal },
+    { data: settingsRow },
+    { data: activityRows },
+    { data: allMilestones },
+    { data: allActions },
+  ] = await Promise.all([
+    getGroupPeople(supabase, groupId).then((p) => p ?? []),
+    supabase
+      .from('tracker_lookups')
+      .select('list, key, label, colour, sort_order')
+      .eq('group_id', groupId)
+      .eq('active', true),
+    supabase
+      .from('tracker_project_plans')
+      .select('id, name, region, status')
+      .eq('group_id', groupId)
+      .eq('parent_id', planId)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true }),
+    supabase
+      .from('tracker_milestones')
+      .select('id, title, description, owner_id, status, health, start_on, due_on, baseline_due_on, priority, progress_mode, progress_pct, sort_order')
+      .eq('group_id', groupId)
+      .eq('plan_id', planId)
+      .is('archived_at', null)
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('tracker_v_milestone_progress')
+      .select('milestone_id, status, due_on, done_actions, total_actions, progress_pct, days_slipped, overdue')
+      .eq('plan_id', planId),
+    supabase
+      .from('tracker_actions')
+      .select('id, title, type, who, assignee_id, due_on, status, priority, milestone_id, contact_id, notes, waiting_since')
+      .eq('group_id', groupId)
+      .eq('plan_id', planId)
+      .is('archived_at', null),
+    supabase
+      .from('tracker_updates')
+      .select('id, kind, date, source, text, author_id')
+      .eq('group_id', groupId)
+      .eq('plan_id', planId)
+      .order('date', { ascending: false }),
+    supabase
+      .from('tracker_contact_plans')
+      .select('contact:tracker_contacts(id, name, org, role, phone, email, notes, last_contact)')
+      .eq('group_id', groupId)
+      .eq('plan_id', planId),
+    supabase
+      .from('tracker_comments')
+      .select('id, author_id, body, created_at, edited_at')
+      .eq('plan_id', planId)
+      .eq('entity_type', 'plan')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('tracker_plan_members')
+      .select('user_id, role')
+      .eq('plan_id', planId),
+    supabase.rpc('tracker_today', { p_group_id: groupId }),
+    supabase
+      .from('tracker_settings')
+      .select('time_zone, chaser_days')
+      .eq('group_id', groupId)
+      .maybeSingle(),
+    supabase
+      .from('tracker_activity_log')
+      .select('id, actor_id, entity_type, entity_id, verb, diff, created_at')
+      .eq('plan_id', planId)
+      .order('created_at', { ascending: false }),
+    supabase.from('tracker_milestones').select('id, title').eq('plan_id', planId),
+    supabase.from('tracker_actions').select('id, title').eq('plan_id', planId),
+  ])
+
   // Lookups for labels.
-  const { data: lookupRows } = await supabase
-    .from('tracker_lookups')
-    .select('list, key, label, colour, sort_order')
-    .eq('group_id', groupId)
-    .eq('active', true)
   const lookups = buildLookups((lookupRows ?? []) as LookupRow[])
 
   // People names for "by {name}" + owner/lead/members.
-  const people = (await getGroupPeople(supabase, groupId)) ?? []
   const names = nameMap(people)
 
-  // Sub-projects.
-  const { data: subPlans } = await supabase
-    .from('tracker_project_plans')
-    .select('id, name, region, status')
-    .eq('group_id', groupId)
-    .eq('parent_id', planId)
-    .order('sort_order', { ascending: true })
-    .order('name', { ascending: true })
-
-  // Milestones + progress.
-  const { data: milestones } = await supabase
-    .from('tracker_milestones')
-    .select('id, title, description, owner_id, status, health, start_on, due_on, baseline_due_on, priority, progress_mode, progress_pct, sort_order')
-    .eq('group_id', groupId)
-    .eq('plan_id', planId)
-    .is('archived_at', null)
-    .order('sort_order', { ascending: true })
-  const { data: mProgress } = await supabase
-    .from('tracker_v_milestone_progress')
-    .select('milestone_id, status, due_on, done_actions, total_actions, progress_pct, days_slipped, overdue')
-    .eq('plan_id', planId)
+  // Milestone progress by id.
   const progressById = new Map<string, MilestoneProgressRow>()
   for (const r of (mProgress ?? []) as unknown as MilestoneProgressRow[]) progressById.set(r.milestone_id, r)
 
   // Actions (open first, then done).
-  const { data: actions } = await supabase
-    .from('tracker_actions')
-    .select('id, title, type, who, assignee_id, due_on, status, priority, milestone_id, contact_id, notes, waiting_since')
-    .eq('group_id', groupId)
-    .eq('plan_id', planId)
-    .is('archived_at', null)
   const sortedActions = [...(actions ?? [])].sort((a, b) => {
     const rank = (s: string) => (s === 'done' ? 1 : 0)
     return rank(a.status as string) - rank(b.status as string)
   })
 
   // Update log (handover first, then newest first).
-  const { data: updates } = await supabase
-    .from('tracker_updates')
-    .select('id, kind, date, source, text, author_id')
-    .eq('group_id', groupId)
-    .eq('plan_id', planId)
-    .order('date', { ascending: false })
   const sortedUpdates = [...(updates ?? [])].sort((a, b) => {
     const rank = (k: string) => (k === 'handover' ? 0 : 1)
     const r = rank(a.kind as string) - rank(b.kind as string)
@@ -120,11 +169,6 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
 
   // Contacts linked to the plan (full details for the side box and the action
   // Contact picker).
-  const { data: contactLinks } = await supabase
-    .from('tracker_contact_plans')
-    .select('contact:tracker_contacts(id, name, org, role, phone, email, notes, last_contact)')
-    .eq('group_id', groupId)
-    .eq('plan_id', planId)
   const contacts: ContactDetail[] = ((contactLinks ?? []) as unknown as { contact: ContactDetail | ContactDetail[] | null }[])
     .map((c) => (Array.isArray(c.contact) ? c.contact[0] ?? null : c.contact))
     .filter((c): c is ContactDetail => c != null)
@@ -133,6 +177,8 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
 
   // Group contacts not yet linked to this plan (for "link an existing one").
   // Only loaded for people who can edit (they are the only ones who can link).
+  // This read depends on who can edit and which contacts are already linked, so
+  // it runs after the parallel batch above.
   let linkableContacts: { id: string; name: string; org: string | null; role: string | null }[] = []
   if (canEdit) {
     const { data: allContacts } = await supabase
@@ -145,53 +191,19 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
       .filter((c) => !linkedIds.has(c.id))
   }
 
-  // Project comments (not removed), oldest first so the newest sits at the
-  // bottom. RLS scopes the read to group members.
-  const { data: commentRows } = await supabase
-    .from('tracker_comments')
-    .select('id, author_id, body, created_at, edited_at')
-    .eq('plan_id', planId)
-    .eq('entity_type', 'plan')
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true })
-
-  // Members (lead/member rows). The plan's own lead_id/owner_id are shown too.
-  const { data: members } = await supabase
-    .from('tracker_plan_members')
-    .select('user_id, role')
-    .eq('plan_id', planId)
-
   // Today in the group's time zone (FR-1.6 fix): the Log update form must
   // default to the group's today, not the UTC date (between midnight and 8 am
   // Perth the UTC date is still yesterday). Same helper the list page uses.
-  const { data: todayVal } = await supabase.rpc('tracker_today', { p_group_id: groupId })
   const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
 
   // Group time zone (for History timestamps) and chaser days (for the Waiting
   // quick button and "Waiting N days" red state). Defaults when unset.
-  const { data: settingsRow } = await supabase
-    .from('tracker_settings')
-    .select('time_zone, chaser_days')
-    .eq('group_id', groupId)
-    .maybeSingle()
   const timeZone = (settingsRow?.time_zone as string | null) ?? DEFAULT_SETTINGS.timeZone
   const chaserDays =
     typeof settingsRow?.chaser_days === 'number' ? (settingsRow.chaser_days as number) : DEFAULT_SETTINGS.chaserDays
 
-  // Activity log for this plan (newest first) — the Latest-activity line and
-  // the History card. RLS scopes this to what the reader may see.
-  const { data: activityRows } = await supabase
-    .from('tracker_activity_log')
-    .select('id, actor_id, entity_type, entity_id, verb, diff, created_at')
-    .eq('plan_id', planId)
-    .order('created_at', { ascending: false })
-
   // Current milestone/action titles (incl. archived) so an update's sentence can
   // name the item — the diff only carries the changed columns.
-  const [{ data: allMilestones }, { data: allActions }] = await Promise.all([
-    supabase.from('tracker_milestones').select('id, title').eq('plan_id', planId),
-    supabase.from('tracker_actions').select('id, title').eq('plan_id', planId),
-  ])
   const titleById: Record<string, string> = {}
   for (const m of allMilestones ?? []) titleById[m.id as string] = (m.title as string) ?? ''
   for (const a of allActions ?? []) titleById[a.id as string] = (a.title as string) ?? ''

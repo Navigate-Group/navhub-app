@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import ActionForm, { type ActionValues } from '@/components/tracker/ActionForm'
 import type { Option, Person } from '@/components/tracker/MilestoneForm'
 import { formatDate, daysBetweenISO } from '@/lib/tracker/view'
+import { addDays } from '@/lib/tracker/domain'
 import { cn } from '@/lib/utils'
 
 export type ActionItem = {
@@ -70,10 +71,41 @@ export default function ActionsSection({
   const [deleting, setDeleting] = useState<ActionItem | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Optimistic overrides: the action id → the fields a quick button changed, so
+  // the row moves on screen straight away while the save runs in the background.
+  // Cleared once the quiet router.refresh() brings the real rows back (or on
+  // failure, when we revert).
+  const [overrides, setOverrides] = useState<Record<string, Partial<ActionItem>>>({})
+
+  // What a quick transition changes, computed the same way the server does, so
+  // the optimistic row matches what will come back. The 085 trigger also sets
+  // waiting_since / done_on server-side; we mirror waiting_since here so the
+  // "Waiting N days" line renders immediately.
+  function optimisticPatch(a: ActionItem, q: Quick): Partial<ActionItem> {
+    switch (q) {
+      case 'done':
+        return { status: 'done' }
+      case 'reopen':
+        return { status: 'open' }
+      case 'back_to_me':
+        return { status: 'open', waiting_since: null }
+      case 'waiting':
+        return { status: 'waiting', due_on: addDays(today, chaserDays), waiting_since: today }
+      case 'plus_day':
+        return { due_on: addDays(a.due_on ?? today, 1) }
+      case 'plus_week':
+        return { due_on: addDays(a.due_on ?? today, 7) }
+      default:
+        return {}
+    }
+  }
 
   async function quick(a: ActionItem, q: Quick) {
     setBusyId(a.id)
     setError(null)
+    // Move the action on screen straight away.
+    const patch = optimisticPatch(a, q)
+    setOverrides((o) => ({ ...o, [a.id]: patch }))
     try {
       const res = await fetch(`/api/tracker/actions/${a.id}`, {
         method: 'PATCH',
@@ -82,11 +114,29 @@ export default function ActionsSection({
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
+        // Put the action back where it was and show the error.
+        setOverrides((o) => {
+          const next = { ...o }
+          delete next[a.id]
+          return next
+        })
         setError(body.error || 'Could not update the action')
       } else {
+        // Refresh the rest of the page quietly so counts and warnings catch up,
+        // then drop the override now the server rows carry the change.
         router.refresh()
+        setOverrides((o) => {
+          const next = { ...o }
+          delete next[a.id]
+          return next
+        })
       }
     } catch {
+      setOverrides((o) => {
+        const next = { ...o }
+        delete next[a.id]
+        return next
+      })
       setError('Could not update the action')
     } finally {
       setBusyId(null)
@@ -122,6 +172,15 @@ export default function ActionsSection({
     notes: '',
   }
 
+  // Apply any optimistic overrides, then keep the same ordering the server uses
+  // (open first, then done), so a row moved to Done drops to the bottom at once.
+  const displayActions = actions
+    .map((a) => (overrides[a.id] ? { ...a, ...overrides[a.id] } : a))
+    .sort((a, b) => {
+      const rank = (s: string) => (s === 'done' ? 1 : 0)
+      return rank(a.status) - rank(b.status)
+    })
+
   return (
     <section className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -137,7 +196,7 @@ export default function ActionsSection({
         <p className="text-sm text-muted-foreground">No actions yet.</p>
       ) : (
         <ul className="space-y-2">
-          {actions.map((a) => {
+          {displayActions.map((a) => {
             const waitingDays =
               a.status === 'waiting' && a.waiting_since ? daysBetweenISO(a.waiting_since, today) : 0
             const waitingTooLong = waitingDays > chaserDays

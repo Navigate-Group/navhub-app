@@ -105,6 +105,16 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
   }
 
+  // Read the action's status before the save, so "Last spoke" only moves when
+  // the action *becomes* Done (it wasn't Done before this save) — editing the
+  // notes of an already-done call must not touch the contact's date.
+  const { data: before } = await supabase
+    .from('tracker_actions')
+    .select('status')
+    .eq('id', actionId)
+    .maybeSingle()
+  const wasDone = (before?.status as string | null) === 'done'
+
   const { data, error } = await supabase
     .from('tracker_actions')
     .update(patch)
@@ -119,12 +129,14 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     )
   }
 
-  // "Last spoke": when a call or email action ends up Done and has a contact,
-  // move that contact's last-contact date to today. Best-effort — if the person
-  // can't change the contact (e.g. an assignee without edit access) the update
-  // is skipped quietly; the action stays marked Done.
+  // "Last spoke": when a call or email action *becomes* Done and has a contact,
+  // move that contact's last-contact date to today. Only on the transition into
+  // Done — saving an already-done action (e.g. editing its notes) leaves the
+  // date alone. Best-effort — if the person can't change the contact (e.g. an
+  // assignee without edit access) the update is skipped quietly; the action
+  // stays marked Done.
   const updated = data[0] as { status?: string; type?: string | null; contact_id?: string | null }
-  if (updated.status === 'done' && updated.contact_id && (updated.type === 'call' || updated.type === 'email')) {
+  if (!wasDone && updated.status === 'done' && updated.contact_id && (updated.type === 'call' || updated.type === 'email')) {
     const { data: todayVal } = await supabase.rpc('tracker_today', { p_group_id: groupId })
     const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
     await supabase.from('tracker_contacts').update({ last_contact: today }).eq('id', updated.contact_id)
