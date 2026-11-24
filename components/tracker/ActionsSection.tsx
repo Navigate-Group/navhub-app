@@ -300,6 +300,7 @@ export default function ActionsSection({
           people={people}
           milestones={milestones}
           contacts={contacts}
+          currentTypeLabel={editing.typeLabel}
         />
       )}
 

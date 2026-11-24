@@ -60,6 +60,7 @@ export default function MilestoneForm({
   priorities,
   people,
   canEditBaseline,
+  currentStatusLabel,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -71,6 +72,9 @@ export default function MilestoneForm({
   priorities: Option[]
   people: Person[]
   canEditBaseline: boolean
+  // This milestone's current status label, used only when that status is a now-
+  // hidden lookup value so it still shows in the picker (falls back to the key).
+  currentStatusLabel?: string
 }) {
   const router = useRouter()
   const [v, setV] = useState<MilestoneValues>(initial)
@@ -80,6 +84,14 @@ export default function MilestoneForm({
   function set<K extends keyof MilestoneValues>(key: K, value: MilestoneValues[K]) {
     setV((prev) => ({ ...prev, [key]: value }))
   }
+
+  // Keep this milestone's own current status in the picker even if it's now a
+  // hidden lookup value, so it shows and isn't silently cleared on save. Other
+  // (new/unset) records don't get the extra option.
+  const statusOptions =
+    initial.status && !statuses.some((s) => s.key === initial.status)
+      ? [...statuses, { key: initial.status, label: currentStatusLabel || initial.status }]
+      : statuses
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -169,7 +181,7 @@ export default function MilestoneForm({
             <div className="space-y-1">
               <Label htmlFor="m-status">Status</Label>
               <select id="m-status" className={selectClass} value={v.status} onChange={(e) => set('status', e.target.value)}>
-                {statuses.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                {statusOptions.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select>
             </div>
             <div className="space-y-1">

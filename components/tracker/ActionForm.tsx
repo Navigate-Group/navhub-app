@@ -56,6 +56,7 @@ export default function ActionForm({
   people,
   milestones,
   contacts,
+  currentTypeLabel,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -68,6 +69,9 @@ export default function ActionForm({
   people: Person[]
   milestones: { id: string; title: string }[]
   contacts: { id: string; name: string }[]
+  // This action's current type label, used only when that type is a now-hidden
+  // lookup value so it still shows in the picker (falls back to the key).
+  currentTypeLabel?: string
 }) {
   const router = useRouter()
   const [v, setV] = useState<ActionValues>(initial)
@@ -77,6 +81,14 @@ export default function ActionForm({
   function set<K extends keyof ActionValues>(key: K, value: ActionValues[K]) {
     setV((prev) => ({ ...prev, [key]: value }))
   }
+
+  // Keep this action's own current type in the picker even if it's now a hidden
+  // lookup value, so it shows and isn't silently cleared on save. New/unset
+  // actions don't get the extra option.
+  const typeOptions =
+    initial.type && !types.some((t) => t.key === initial.type)
+      ? [...types, { key: initial.type, label: currentTypeLabel || initial.type }]
+      : types
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -142,7 +154,7 @@ export default function ActionForm({
               <Label htmlFor="a-type">Type</Label>
               <select id="a-type" className={selectClass} value={v.type} onChange={(e) => set('type', e.target.value)}>
                 <option value="">—</option>
-                {types.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                {typeOptions.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
               </select>
             </div>
             <div className="space-y-1">

@@ -66,6 +66,24 @@ export function lookupLabel(lookups: Lookups, list: string, key: string | null |
   return lookups[list]?.find((o) => o.key === key)?.label ?? key
 }
 
+/**
+ * The shown values for a dropdown PLUS the record's own current value, even if
+ * that value is now hidden. This keeps an existing record's chosen value in the
+ * picker — so it still shows and isn't silently cleared on save — while other
+ * records' pickers only offer the shown values. The current value is appended
+ * (labelled via lookupLabel) when it isn't already among the shown options.
+ */
+export function optionsWithCurrent(
+  lookups: Lookups,
+  list: string,
+  currentKey: string | null | undefined,
+): { key: string; label: string }[] {
+  const options = activeOptions(lookups, list)
+  if (!currentKey) return options
+  if (options.some((o) => o.key === currentKey)) return options
+  return [...options, { key: currentKey, label: lookupLabel(lookups, list, currentKey) }]
+}
+
 // ── Status colour mapping (design spec) ─────────────────────────────────────
 
 /**

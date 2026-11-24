@@ -7,6 +7,7 @@ import {
   buildLookups,
   lookupLabel,
   activeOptions,
+  optionsWithCurrent,
   formatDate,
   formatDateTime,
   isFolderLink,
@@ -220,7 +221,9 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   const latestActivity = historyItems[0] ?? null
 
   const sourceOptions = activeOptions(lookups, 'source')
-  const statusOptions = activeOptions(lookups, 'status')
+  // Include the plan's own current status even if it's now hidden, so the
+  // picker shows it and a save doesn't silently clear it.
+  const statusOptions = optionsWithCurrent(lookups, 'status', plan.status as string | null)
 
   // ── Milestone / action view-models for the editable sections (P6) ──────────
   const peopleOptions = people.map((p) => ({ id: p.id, name: p.name || '—' }))
