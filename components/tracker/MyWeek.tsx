@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -71,6 +71,7 @@ export default function MyWeek({
   chaserDays: number
 }) {
   const router = useRouter()
+  const [, startTransition] = useTransition()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Optimistically removed action ids: a quick button (Done, +1 day, +1 week,
@@ -105,12 +106,18 @@ export default function MyWeek({
         setError(body.error || 'Could not update the action')
       } else {
         // Re-read quietly so the action moves to its new bucket and the tiles
-        // update, then drop the optimistic hide now the server rows agree.
-        router.refresh()
-        setHiddenIds((prev) => {
-          const next = new Set(prev)
-          next.delete(a.id)
-          return next
+        // update, then drop the optimistic hide now the server rows agree. Both
+        // run in one transition so the hide only clears once the fresh rows have
+        // arrived — otherwise the action would briefly reappear in its old
+        // bucket before moving. Plain (not async) callback: React 18 / Next 14
+        // don't await it.
+        startTransition(() => {
+          router.refresh()
+          setHiddenIds((prev) => {
+            const next = new Set(prev)
+            next.delete(a.id)
+            return next
+          })
         })
       }
     } catch {
