@@ -131,12 +131,19 @@ BEGIN
     RAISE EXCEPTION '6: health checks wrong. Got: %', got;
   END IF;
 
-  -- 7. The views follow the access rules (security_invoker)
+  -- 7. The views follow the access rules (security_invoker). Since 086 a
+  -- Manager sees every plan and Staff only the plans they lead, are members of,
+  -- or were given access to (u2 leads P2 only).
+  PERFORM set_config('request.jwt.claim.sub', u1::text, true);
+  PERFORM set_config('role', 'authenticated', true);
+  SELECT count(*) INTO n FROM tracker_v_plan_attention WHERE group_id = g;
+  IF n <> 5 THEN RAISE EXCEPTION '7: a manager sees % plans, expected 5', n; END IF;
+  PERFORM set_config('role', 'none', true);
+
   PERFORM set_config('request.jwt.claim.sub', u2::text, true);
   PERFORM set_config('role', 'authenticated', true);
   SELECT count(*) INTO n FROM tracker_v_plan_attention WHERE group_id = g;
-  IF n <> 5 THEN RAISE EXCEPTION '7: a group member sees % plans, expected 5', n; END IF;
-  PERFORM set_config('role', 'none', true);
+  IF n <> 1 THEN RAISE EXCEPTION '7: staff leading P2 sees % plans, expected 1', n; END IF;
 
   PERFORM set_config('request.jwt.claim.sub', u3::text, true);
   PERFORM set_config('role', 'authenticated', true);

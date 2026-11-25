@@ -73,7 +73,7 @@ export default async function PlansPage() {
     // Plans (RLS-scoped to the group). Load all; filter client-side.
     supabase
       .from('tracker_project_plans')
-      .select('id, name, client, phase, region, category, parent_id, status, sort_order, archived_at')
+      .select('id, name, client, phase, region, category, parent_id, status, sort_order, archived_at, progress_pct')
       .eq('group_id', groupId)
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true }),
@@ -89,10 +89,12 @@ export default async function PlansPage() {
       .from('tracker_v_milestone_progress')
       .select('milestone_id, plan_id, status, due_on, done_actions, total_actions, progress_pct, days_slipped, overdue')
       .eq('group_id', groupId),
-    // Milestone titles (the progress view has no title).
+    // Milestone titles + progress mode (the progress view has neither). The
+    // mode tells us whether a milestone's progress is counted "from its actions"
+    // so a card can show "No actions linked yet" when none are linked.
     supabase
       .from('tracker_milestones')
-      .select('id, title')
+      .select('id, title, progress_mode')
       .eq('group_id', groupId)
       .is('archived_at', null),
     // Today (group time zone) via the DB helper, so labels match the views.
@@ -102,7 +104,11 @@ export default async function PlansPage() {
   const lookups = buildLookups((lookupRows ?? []) as LookupRow[])
 
   const titleById = new Map<string, string>()
-  for (const m of milestoneTitles ?? []) titleById.set(m.id as string, (m.title as string) ?? '')
+  const modeById = new Map<string, string>()
+  for (const m of milestoneTitles ?? []) {
+    titleById.set(m.id as string, (m.title as string) ?? '')
+    modeById.set(m.id as string, (m.progress_mode as string) ?? 'manual')
+  }
 
   const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
 
@@ -148,6 +154,8 @@ export default async function PlansPage() {
         nextMilestoneDone: nm ? nm.done_actions : null,
         nextMilestoneTotal: nm ? nm.total_actions : null,
         nextMilestonePct: nm ? nm.progress_pct : null,
+        nextMilestoneFromActions: nm ? (modeById.get(nm.milestone_id) ?? 'manual') === 'from_actions' : false,
+        planProgressPct: (p.progress_pct as number | null) ?? 0,
       }
     })
 

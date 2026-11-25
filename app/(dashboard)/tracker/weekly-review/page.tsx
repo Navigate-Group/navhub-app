@@ -47,6 +47,7 @@ export default async function WeeklyReviewPage() {
     { data: doneActionRows },
     { data: healthRow },
     { data: planRows },
+    { data: myActionPlanRows },
   ] = await Promise.all([
     getTrackerHeaderData(ctx),
     supabase
@@ -95,6 +96,12 @@ export default async function WeeklyReviewPage() {
       .from('tracker_project_plans')
       .select('id, name, archived_at')
       .eq('group_id', groupId),
+    // Names of the projects behind my own actions (migration 086). My own
+    // closed actions and action-based health checks may sit on a project I
+    // can't otherwise see; this SECURITY DEFINER function names them so the
+    // review still shows which project each action belongs to (without a link
+    // when I can't open it).
+    supabase.rpc('tracker_my_action_plans', { p_group_id: groupId }),
   ])
 
   const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
@@ -123,9 +130,19 @@ export default async function WeeklyReviewPage() {
   // Plan name + live set for labels and the drill-down.
   const planNameById = new Map<string, string>()
   const livePlanIds = new Set<string>()
+  // Plan ids the user can actually open (RLS-scoped) — used to decide whether a
+  // project name becomes a link (migration 086 need-to-know).
+  const visiblePlanIds = new Set<string>()
   for (const p of planRows ?? []) {
     planNameById.set(p.id as string, (p.name as string) ?? '')
+    visiblePlanIds.add(p.id as string)
     if ((p.archived_at as string | null) == null) livePlanIds.add(p.id as string)
+  }
+  // Names of the projects behind my own actions, even those I can't see. Used
+  // to name an action's project in the drill-down and action-based health
+  // checks; these projects stay unlinked below.
+  for (const p of (myActionPlanRows ?? []) as { id: string; name: string }[]) {
+    if (!planNameById.has(p.id)) planNameById.set(p.id, p.name ?? '')
   }
 
   // Chart: the last 8 ISO weeks up to today. The counts come from the view; any
@@ -140,12 +157,16 @@ export default async function WeeklyReviewPage() {
     closedWeeks.push({ isoWeek: w, closed: closedByWeek.get(w) ?? 0 })
   }
 
-  // Drill-down: my done actions, title + project (dropping actions on archived
-  // plans to match the view).
+  // Drill-down: my done actions, title + project. Drop actions on a visible but
+  // archived plan to match the view; keep actions on a project I can't see
+  // (named via tracker_my_action_plans) so my own closed actions aren't lost
+  // (migration 086). The project name only becomes a link when I can open it.
   const closedActions: ClosedAction[] = (doneActionRows ?? [])
     .filter((a) => {
       const planId = a.plan_id as string | null
-      return planId == null || livePlanIds.has(planId)
+      if (planId == null) return true
+      if (visiblePlanIds.has(planId)) return livePlanIds.has(planId)
+      return planNameById.has(planId)
     })
     .map((a) => {
       const planId = (a.plan_id as string | null) ?? null
@@ -153,7 +174,8 @@ export default async function WeeklyReviewPage() {
         id: a.id as string,
         title: (a.title as string) ?? '',
         doneOn: a.done_on as string,
-        planId,
+        // Only keep a linkable planId when the user can open the project.
+        planId: planId && visiblePlanIds.has(planId) ? planId : null,
         planName: planId ? planNameById.get(planId) ?? null : null,
       }
     })
@@ -177,17 +199,19 @@ export default async function WeeklyReviewPage() {
     }
   }
 
+  // Link to a project only when the user can open it (migration 086).
   const planItem = (id: string) => ({
     id,
     label: planNameById.get(id) ?? 'Project',
-    href: `/tracker/plans/${id}`,
+    href: visiblePlanIds.has(id) ? `/tracker/plans/${id}` : null,
   })
   const actionItem = (id: string) => {
     const a = actionTitleById.get(id)
+    const planId = a?.planId ?? null
     return {
       id,
       label: a?.title ?? 'Action',
-      href: a?.planId ? `/tracker/plans/${a.planId}` : null,
+      href: planId && visiblePlanIds.has(planId) ? `/tracker/plans/${planId}` : null,
     }
   }
 
