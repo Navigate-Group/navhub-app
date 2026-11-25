@@ -132,6 +132,101 @@ export type BriefMessage = { role: 'user' | 'assistant'; content: string }
 /** Per-line result after applying. */
 export type ApplyResult = { id: string; ok: boolean; error?: string }
 
+/** Per-turn metrics for the briefing conversation route (not stored in the DB). */
+export type BriefMetrics = {
+  /** Wall-clock time for the whole turn, in milliseconds. */
+  elapsedMs: number
+  /** Number of calls made to the model this turn. */
+  modelCalls: number
+  /** Input tokens summed across this turn's model calls. */
+  inputTokens: number
+  /** Output tokens summed across this turn's model calls. */
+  outputTokens: number
+}
+
+// ── Patch building (pure; shared by the apply route and tests) ───────────────
+//
+// These turn a validated ProposedChange into the exact object written to the
+// database. The rule the whole feature depends on: a field the model did NOT
+// provide is OMITTED from the patch, so it is left unchanged. A field is only
+// written when the change actually carries a value for it. This is what stops a
+// status-only project change clearing its phase/summary, or a done-only action
+// change clearing its assignee.
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+/** True when v is a valid 'YYYY-MM-DD' date string. */
+export function isIsoDate(v: unknown): v is string {
+  return typeof v === 'string' && ISO_DATE_RE.test(v)
+}
+
+/** Clamp a progress percentage to a whole 0–100, or undefined when absent. */
+export function clampPct(v: number | null | undefined): number | undefined {
+  if (v === null || v === undefined || !Number.isFinite(v)) return undefined
+  return Math.max(0, Math.min(100, Math.round(v)))
+}
+
+/**
+ * Build the `tracker_actions` update patch for an `update_action` change.
+ * Only the fields the model provided are included; a date that isn't a real
+ * ISO date throws (callers surface the "Invalid due date" message). The
+ * assignee is only set when the change carries one — an omitted assignee is
+ * left exactly as it was.
+ */
+export function buildActionPatch(
+  change: Extract<ProposedChange, { kind: 'update_action' }>,
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (change.status) patch.status = change.status
+  if (change.dueOn !== undefined && change.dueOn !== null) {
+    if (!isIsoDate(change.dueOn)) throw new Error('Invalid due date')
+    patch.due_on = change.dueOn
+  }
+  // Only touch the assignee when the model actually provided one. (A null that
+  // reached here would be an explicit clear; an omitted field stays undefined.)
+  if (change.assigneeId !== undefined) patch.assignee_id = change.assigneeId
+  if (change.title) patch.title = change.title.trim()
+  return patch
+}
+
+/** Build the `tracker_milestones` update patch for an `update_milestone` change. */
+export function buildMilestonePatch(
+  change: Extract<ProposedChange, { kind: 'update_milestone' }>,
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (change.status) patch.status = change.status
+  if (change.dueOn !== undefined && change.dueOn !== null) {
+    if (!isIsoDate(change.dueOn)) throw new Error('Invalid due date')
+    patch.due_on = change.dueOn
+  }
+  const pct = clampPct(change.progressPct)
+  if (pct !== undefined) patch.progress_pct = pct
+  return patch
+}
+
+/** Build the `tracker_project_plans` update patch for an `update_plan` change. */
+export function buildPlanPatch(
+  change: Extract<ProposedChange, { kind: 'update_plan' }>,
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (change.status) patch.status = change.status
+  // Phase and summary are only written when provided — an omitted field is left
+  // unchanged (the data-loss bug was writing null here).
+  if (change.phase !== undefined) patch.phase = change.phase
+  if (change.summary !== undefined) patch.summary = change.summary
+  if (change.priority) patch.priority = change.priority
+  const pct = clampPct(change.progressPct)
+  if (pct !== undefined) patch.progress_pct = pct
+  if (change.startOn !== undefined && change.startOn !== null) {
+    if (!isIsoDate(change.startOn)) throw new Error('Invalid start date')
+    patch.start_on = change.startOn
+  }
+  if (change.endOn !== undefined && change.endOn !== null) {
+    if (!isIsoDate(change.endOn)) throw new Error('Invalid end date')
+    patch.end_on = change.endOn
+  }
+  return patch
+}
+
 // ── Anthropic tool schemas ───────────────────────────────────────────────────
 
 /**

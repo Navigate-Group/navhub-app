@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getTrackerContext } from '@/lib/tracker/server'
-import type { ProposedChange, ProposedChangeItem, ApplyResult } from '@/lib/tracker/brief'
+import { addDays } from '@/lib/tracker/domain'
+import {
+  type ProposedChange,
+  type ProposedChangeItem,
+  type ApplyResult,
+  buildActionPatch,
+  buildMilestonePatch,
+  buildPlanPatch,
+  clampPct,
+} from '@/lib/tracker/brief'
 
 export const runtime = 'nodejs'
 
@@ -28,9 +37,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No changes to apply' }, { status: 400 })
   }
 
-  // Today in the group's time zone (for "contacted today" and waiting dates).
-  const { data: todayVal } = await supabase.rpc('tracker_today', { p_group_id: groupId })
+  // Today in the group's time zone (for "contacted today" and waiting dates),
+  // plus the group's chaser setting (the default chase date for Waiting — same
+  // as the quick button in app/api/tracker/actions/[id]/route.ts).
+  const [{ data: todayVal }, { data: settingsRow }] = await Promise.all([
+    supabase.rpc('tracker_today', { p_group_id: groupId }),
+    supabase.from('tracker_settings').select('chaser_days').eq('group_id', groupId).maybeSingle(),
+  ])
   const today = typeof todayVal === 'string' ? todayVal : new Date().toISOString().slice(0, 10)
+  const chaserDays = typeof settingsRow?.chaser_days === 'number' ? settingsRow.chaser_days : 5
 
   // Valid lookup keys per list — a proposed key that isn't real is rejected.
   const { data: lookupRows } = await supabase
@@ -48,7 +63,7 @@ export async function POST(request: Request) {
   for (const item of items) {
     const id = typeof item?.id === 'string' ? item.id : ''
     try {
-      const err = await applyOne(supabase, groupId, today, validKeys, item?.change)
+      const err = await applyOne(supabase, groupId, today, chaserDays, validKeys, item?.change)
       results.push(err ? { id, ok: false, error: err } : { id, ok: true })
     } catch {
       results.push({ id, ok: false, error: 'The change could not be saved' })
@@ -103,6 +118,7 @@ async function applyOne(
   supabase: SupabaseClient,
   groupId: string,
   today: string,
+  chaserDays: number,
   validKeys: Map<string, Set<string>>,
   change: ProposedChange | undefined,
 ): Promise<string | null> {
@@ -147,21 +163,56 @@ async function applyOne(
 
     case 'update_action': {
       if (!change.actionId) return 'An action is required'
-      const patch: Record<string, unknown> = {}
-      if (change.status) patch.status = change.status
-      if (change.dueOn !== undefined && change.dueOn !== null) {
-        if (!okDate(change.dueOn)) return 'Invalid due date'
-        patch.due_on = change.dueOn
+      let patch: Record<string, unknown>
+      try {
+        patch = buildActionPatch(change)
+      } catch {
+        return 'Invalid due date'
       }
-      if (change.assigneeId !== undefined) patch.assignee_id = change.assigneeId
-      if (change.title) patch.title = change.title.trim()
+      // Waiting with no due date given gets the usual chase date (today +
+      // chaser days) — same as the Waiting quick button on an action.
+      if (change.status === 'waiting' && patch.due_on === undefined) {
+        patch.due_on = addDays(today, chaserDays)
+      }
       if (Object.keys(patch).length === 0) return 'Nothing to update'
+
+      // Read the status before the save so "Last spoke" only moves when the
+      // action *becomes* Done — mirrors app/api/tracker/actions/[id]/route.ts.
+      const { data: before } = await supabase
+        .from('tracker_actions')
+        .select('status')
+        .eq('id', change.actionId)
+        .maybeSingle()
+      const wasDone = (before?.status as string | null) === 'done'
+
       const { data, error } = await supabase
         .from('tracker_actions')
         .update(patch)
         .eq('id', change.actionId)
-        .select('id')
-      return permissionMessage(error, !data || data.length === 0)
+        .select('id, status, type, contact_id')
+      const msg = permissionMessage(error, !data || data.length === 0)
+      if (msg) return msg
+
+      // When a call or email action *becomes* Done and has a contact, move that
+      // contact's last-contact date to today (best-effort, like the quick
+      // button — skipped quietly if the person can't change the contact).
+      const updated = (data?.[0] ?? {}) as {
+        status?: string
+        type?: string | null
+        contact_id?: string | null
+      }
+      if (
+        !wasDone &&
+        updated.status === 'done' &&
+        updated.contact_id &&
+        (updated.type === 'call' || updated.type === 'email')
+      ) {
+        await supabase
+          .from('tracker_contacts')
+          .update({ last_contact: today })
+          .eq('id', updated.contact_id)
+      }
+      return null
     }
 
     case 'add_milestone': {
@@ -183,14 +234,12 @@ async function applyOne(
     case 'update_milestone': {
       if (!change.milestoneId) return 'A milestone is required'
       if (!keyOk(validKeys, 'milestone_status', change.status)) return 'Unknown milestone status'
-      const patch: Record<string, unknown> = {}
-      if (change.status) patch.status = change.status
-      if (change.dueOn !== undefined && change.dueOn !== null) {
-        if (!okDate(change.dueOn)) return 'Invalid due date'
-        patch.due_on = change.dueOn
+      let patch: Record<string, unknown>
+      try {
+        patch = buildMilestonePatch(change)
+      } catch {
+        return 'Invalid due date'
       }
-      const pct = clampPct(change.progressPct)
-      if (pct !== undefined) patch.progress_pct = pct
       if (Object.keys(patch).length === 0) return 'Nothing to update'
       const { data, error } = await supabase
         .from('tracker_milestones')
@@ -203,20 +252,11 @@ async function applyOne(
     case 'update_plan': {
       if (!change.planId) return 'A project is required'
       if (!keyOk(validKeys, 'status', change.status)) return 'Unknown project status'
-      const patch: Record<string, unknown> = {}
-      if (change.status) patch.status = change.status
-      if (change.phase !== undefined) patch.phase = change.phase
-      if (change.summary !== undefined) patch.summary = change.summary
-      if (change.priority) patch.priority = change.priority
-      const pct = clampPct(change.progressPct)
-      if (pct !== undefined) patch.progress_pct = pct
-      if (change.startOn !== undefined && change.startOn !== null) {
-        if (!okDate(change.startOn)) return 'Invalid start date'
-        patch.start_on = change.startOn
-      }
-      if (change.endOn !== undefined && change.endOn !== null) {
-        if (!okDate(change.endOn)) return 'Invalid end date'
-        patch.end_on = change.endOn
+      let patch: Record<string, unknown>
+      try {
+        patch = buildPlanPatch(change)
+      } catch (e) {
+        return e instanceof Error ? e.message : 'Invalid date'
       }
       if (Object.keys(patch).length === 0) return 'Nothing to update'
       const { data, error } = await supabase
@@ -277,9 +317,4 @@ async function applyOne(
     default:
       return 'Unknown change'
   }
-}
-
-function clampPct(v: number | null | undefined): number | undefined {
-  if (v === null || v === undefined || !Number.isFinite(v)) return undefined
-  return Math.max(0, Math.min(100, Math.round(v)))
 }

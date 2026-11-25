@@ -13,6 +13,7 @@ import {
   BRIEF_MAX_TOKENS,
   BRIEF_TIMEOUT_MS,
   type BriefMessage,
+  type BriefMetrics,
   type BriefTurn,
   type ProposedChange,
   type ProposedChangeItem,
@@ -60,7 +61,40 @@ export async function POST(request: Request) {
   }
 
   const briefCtx = await buildBriefContext(supabase, groupId)
-  const system = buildBriefSystemPrompt(briefCtx)
+  const systemText = buildBriefSystemPrompt(briefCtx)
+
+  // Prompt caching: the fixed part of each turn — the system instructions (which
+  // include the group's people/projects/lists) and the tool definitions — is the
+  // same across the tool loop and across turns, so we mark a cache breakpoint on
+  // it. The system prompt is sent as a cacheable block, and the last tool carries
+  // the cache_control so the whole tool array is cached up to that point. The
+  // changing messages stay uncached.
+  const system = [
+    { type: 'text', text: systemText, cache_control: { type: 'ephemeral' } },
+  ]
+  const tools = briefTools.map((t, i) =>
+    i === briefTools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' as const } } : t,
+  )
+
+  // Per-turn metrics (timing, model calls, tokens). Returned to the client and
+  // logged on the server; never stored in the database.
+  const startedAt = Date.now()
+  let modelCalls = 0
+  let inputTokens = 0
+  let outputTokens = 0
+  const metrics = (): BriefMetrics => ({
+    elapsedMs: Date.now() - startedAt,
+    modelCalls,
+    inputTokens,
+    outputTokens,
+  })
+  const logMetrics = (outcome: string) => {
+    const m = metrics()
+    console.log(
+      `[tracker/brief] ${outcome} — ${m.elapsedMs}ms, ${m.modelCalls} model call(s), ` +
+        `${m.inputTokens} in / ${m.outputTokens} out tokens`,
+    )
+  }
 
   // Running Anthropic message list (starts from the client's chat, then grows
   // with tool_use / tool_result turns as the loop proceeds).
@@ -83,19 +117,34 @@ export async function POST(request: Request) {
           model: BRIEF_MODEL,
           max_tokens: BRIEF_MAX_TOKENS,
           system,
-          tools: briefTools,
+          tools,
           messages: convo,
         }),
       })
 
       if (!res.ok) {
+        logMetrics('ai-error')
         return NextResponse.json({ error: 'AI service error' }, { status: 503 })
       }
 
+      modelCalls += 1
       const data = (await res.json()) as {
         content?: AnthropicContentBlock[]
         stop_reason?: string
+        usage?: {
+          input_tokens?: number
+          output_tokens?: number
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+        }
       }
+      // Count all input tokens (fresh + cache-creation + cache-read) and output.
+      const u = data.usage ?? {}
+      inputTokens +=
+        (u.input_tokens ?? 0) +
+        (u.cache_creation_input_tokens ?? 0) +
+        (u.cache_read_input_tokens ?? 0)
+      outputTokens += u.output_tokens ?? 0
       const blocks = Array.isArray(data.content) ? data.content : []
       const toolUses = blocks.filter(
         (b): b is Extract<AnthropicContentBlock, { type: 'tool_use' }> => b.type === 'tool_use',
@@ -114,13 +163,15 @@ export async function POST(request: Request) {
           ? (ask.input.options as unknown[]).filter((o): o is string => typeof o === 'string').slice(0, 8)
           : []
         const turn: BriefTurn = { type: 'question', text: q, options }
-        return NextResponse.json({ turn })
+        logMetrics('question')
+        return NextResponse.json({ turn, metrics: metrics() })
       }
 
       const propose = toolUses.find((t) => t.name === 'propose_changes')
       if (propose) {
         const turn = buildProposalTurn(propose.input, text || null)
-        return NextResponse.json({ turn })
+        logMetrics('proposal')
+        return NextResponse.json({ turn, metrics: metrics() })
       }
 
       const lookups = toolUses.filter((t) => t.name === 'lookup_project')
@@ -130,7 +181,8 @@ export async function POST(request: Request) {
           type: 'message',
           text: text || "Tell me what happened and I'll work out the changes.",
         }
-        return NextResponse.json({ turn })
+        logMetrics('message')
+        return NextResponse.json({ turn, metrics: metrics() })
       }
 
       // Resolve each lookup as the signed-in person and feed the results back.
@@ -156,8 +208,10 @@ export async function POST(request: Request) {
       type: 'message',
       text: "I couldn't work that out. Could you say it a different way?",
     }
-    return NextResponse.json({ turn })
+    logMetrics('step-cap')
+    return NextResponse.json({ turn, metrics: metrics() })
   } catch {
+    logMetrics('exception')
     return NextResponse.json({ error: 'AI service unavailable' }, { status: 503 })
   } finally {
     clearTimeout(timer)
@@ -199,93 +253,101 @@ function buildProposalTurn(input: Record<string, unknown>, fallbackIntro: string
   return { type: 'proposal', intro, changes: items }
 }
 
+/**
+ * Turn the model's raw change into a typed ProposedChange. A field the model
+ * did NOT provide is OMITTED (left `undefined`), never coerced to `null` — so
+ * the apply route only ever writes fields the model actually meant to set, and
+ * never wipes data the person didn't mention. `set()` adds a key only when the
+ * value is defined; this is what keeps a status-only project change from
+ * clearing its phase/summary, or a done-only action change from clearing its
+ * assignee.
+ */
 function toChange(kind: string | undefined, r: Record<string, unknown>): ProposedChange | null {
   const planId = s(r.planId)
   const status = s(r.status)
+
+  /** Assign a field only when it has a real value (omit when undefined). */
+  const set = <T extends Record<string, unknown>, K extends string>(
+    obj: T,
+    key: K,
+    value: unknown,
+  ): void => {
+    if (value !== undefined) (obj as Record<string, unknown>)[key] = value
+  }
+
   switch (kind) {
     case 'log_update': {
       const text = s(r.text)
       if (!planId || !text) return null
-      return { kind, planId, text, date: s(r.date) ?? null, source: s(r.source) ?? null }
+      const c: ProposedChange = { kind, planId, text }
+      set(c, 'date', s(r.date))
+      set(c, 'source', s(r.source))
+      return c
     }
     case 'add_action': {
       const title = s(r.title)
       if (!planId || !title) return null
-      return {
-        kind,
-        planId,
-        title,
-        type: s(r.type) ?? null,
-        who: s(r.who) ?? null,
-        assigneeId: s(r.assigneeId) ?? null,
-        dueOn: s(r.dueOn) ?? null,
-        milestoneId: s(r.milestoneId) ?? null,
-        contactId: s(r.contactId) ?? null,
-      }
+      const c: ProposedChange = { kind, planId, title }
+      set(c, 'type', s(r.type))
+      set(c, 'who', s(r.who))
+      set(c, 'assigneeId', s(r.assigneeId))
+      set(c, 'dueOn', s(r.dueOn))
+      set(c, 'milestoneId', s(r.milestoneId))
+      set(c, 'contactId', s(r.contactId))
+      return c
     }
     case 'update_action': {
       const actionId = s(r.actionId)
       if (!actionId) return null
-      const st = status === 'open' || status === 'waiting' || status === 'done' ? status : null
-      return {
-        kind,
-        actionId,
-        status: st,
-        dueOn: s(r.dueOn) ?? null,
-        assigneeId: s(r.assigneeId) ?? null,
-        title: s(r.title) ?? null,
-      }
+      const st =
+        status === 'open' || status === 'waiting' || status === 'done' ? status : undefined
+      const c: ProposedChange = { kind, actionId }
+      set(c, 'status', st)
+      set(c, 'dueOn', s(r.dueOn))
+      set(c, 'assigneeId', s(r.assigneeId))
+      set(c, 'title', s(r.title))
+      return c
     }
     case 'add_milestone': {
       const title = s(r.title)
       if (!planId || !title) return null
-      return {
-        kind,
-        planId,
-        title,
-        status: s(r.status) ?? null,
-        dueOn: s(r.dueOn) ?? null,
-        progressPct: num(r.progressPct) ?? null,
-      }
+      const c: ProposedChange = { kind, planId, title }
+      set(c, 'status', s(r.status))
+      set(c, 'dueOn', s(r.dueOn))
+      set(c, 'progressPct', num(r.progressPct))
+      return c
     }
     case 'update_milestone': {
       const milestoneId = s(r.milestoneId)
       if (!milestoneId) return null
-      return {
-        kind,
-        milestoneId,
-        status: s(r.status) ?? null,
-        dueOn: s(r.dueOn) ?? null,
-        progressPct: num(r.progressPct) ?? null,
-      }
+      const c: ProposedChange = { kind, milestoneId }
+      set(c, 'status', s(r.status))
+      set(c, 'dueOn', s(r.dueOn))
+      set(c, 'progressPct', num(r.progressPct))
+      return c
     }
     case 'update_plan': {
       if (!planId) return null
       const pri = s(r.priority)
-      return {
-        kind,
-        planId,
-        status: s(r.status) ?? null,
-        phase: s(r.phase) ?? null,
-        summary: s(r.summary) ?? null,
-        priority: pri === 'high' || pri === 'normal' ? pri : null,
-        progressPct: num(r.progressPct) ?? null,
-        startOn: s(r.startOn) ?? null,
-        endOn: s(r.endOn) ?? null,
-      }
+      const c: ProposedChange = { kind, planId }
+      set(c, 'status', s(r.status))
+      set(c, 'phase', s(r.phase))
+      set(c, 'summary', s(r.summary))
+      set(c, 'priority', pri === 'high' || pri === 'normal' ? pri : undefined)
+      set(c, 'progressPct', num(r.progressPct))
+      set(c, 'startOn', s(r.startOn))
+      set(c, 'endOn', s(r.endOn))
+      return c
     }
     case 'add_contact': {
       const name = s(r.name)
       if (!planId || !name) return null
-      return {
-        kind,
-        planId,
-        name,
-        org: s(r.org) ?? null,
-        role: s(r.role) ?? null,
-        phone: s(r.phone) ?? null,
-        email: s(r.email) ?? null,
-      }
+      const c: ProposedChange = { kind, planId, name }
+      set(c, 'org', s(r.org))
+      set(c, 'role', s(r.role))
+      set(c, 'phone', s(r.phone))
+      set(c, 'email', s(r.email))
+      return c
     }
     case 'link_contact': {
       const contactId = s(r.contactId)
