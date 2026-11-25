@@ -109,6 +109,8 @@ export default function BriefingAgent() {
         results: {},
       }
     if (turn.type === 'error') return { kind: 'message', text: UNAVAILABLE }
+    // Both 'message' and 'answer' are plain assistant text (an answer is a reply
+    // to a question — nothing is saved); show them the same way.
     return { kind: 'message', text: turn.text }
   }
 

@@ -107,6 +107,42 @@ export type ProposedChange =
       kind: 'contacted_today'
       contactId: string
     }
+  | {
+      kind: 'create_project'
+      /** Project name (required). */
+      name: string
+      /** Category key from the group's `category` list (required). */
+      category: string
+      /** Status key from the group's `status` list. */
+      status?: string | null
+      /** Free-text client/organisation. */
+      client?: string | null
+      /** Free-text phase. */
+      phase?: string | null
+      /** Region key from the group's `region` list. */
+      region?: string | null
+      /** An EXISTING parent project the person can see. */
+      parentId?: string | null
+      /** A group member's user id (the project lead). */
+      leadId?: string | null
+      /** Group members' user ids. */
+      memberIds?: string[] | null
+      summary?: string | null
+    }
+  | {
+      kind: 'update_contact'
+      contactId: string
+      phone?: string | null
+      email?: string | null
+      org?: string | null
+      role?: string | null
+      notes?: string | null
+    }
+  | {
+      kind: 'add_comment'
+      planId: string
+      text: string
+    }
 
 export type ProposedChangeKind = ProposedChange['kind']
 
@@ -124,6 +160,8 @@ export type BriefTurn =
   | { type: 'message'; text: string }
   | { type: 'question'; text: string; options: string[] }
   | { type: 'proposal'; intro: string | null; changes: ProposedChangeItem[] }
+  /** A plain-text answer to a question — never proposes or saves anything. */
+  | { type: 'answer'; text: string }
   | { type: 'error'; text: string }
 
 /** A single chat message exchanged with the client. */
@@ -199,7 +237,14 @@ export function buildMilestonePatch(
     patch.due_on = change.dueOn
   }
   const pct = clampPct(change.progressPct)
-  if (pct !== undefined) patch.progress_pct = pct
+  if (pct !== undefined) {
+    patch.progress_pct = pct
+    // A milestone in 'from_actions' mode takes its progress from its actions
+    // (tracker_v_milestone_progress) and ignores progress_pct, so setting a
+    // hand value wouldn't show. Switch it to 'manual' whenever a progress value
+    // is given so the new percentage sticks and shows on the page.
+    patch.progress_mode = 'manual'
+  }
   return patch
 }
 
@@ -227,6 +272,42 @@ export function buildPlanPatch(
   return patch
 }
 
+/**
+ * Build the `tracker_contacts` update patch for an `update_contact` change.
+ * Only the fields the model provided are included — the same "omit what wasn't
+ * given" rule as the project and action patches, so a phone-only edit never
+ * touches the contact's email, organisation, role or notes. An explicit null
+ * (an intentional clear) is kept; an omitted field stays out of the patch.
+ */
+export function buildContactPatch(
+  change: Extract<ProposedChange, { kind: 'update_contact' }>,
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (change.phone !== undefined) patch.phone = change.phone ?? null
+  if (change.email !== undefined) patch.email = change.email ?? null
+  if (change.org !== undefined) patch.org = change.org ?? null
+  if (change.role !== undefined) patch.role = change.role ?? null
+  if (change.notes !== undefined) patch.notes = change.notes ?? null
+  return patch
+}
+
+/**
+ * Whether a `create_project` change must be refused before any write, and why.
+ * Returns an error string (the line's refusal), or null when it may proceed.
+ * Only Managers / Group Owners (editor === true) may create a project; the name
+ * and category are required. Lookup-key and parent-existence checks happen in
+ * the apply route, where the group's valid keys and the database are available.
+ */
+export function createProjectRefusal(
+  change: Extract<ProposedChange, { kind: 'create_project' }>,
+  editor: boolean,
+): string | null {
+  if (!editor) return 'Only Managers or Group Owners can create a project'
+  if (!change.name?.trim()) return 'A project name is required'
+  if (!change.category?.trim()) return 'A category is required'
+  return null
+}
+
 // ── Reading the model's propose_changes input ────────────────────────────────
 //
 // These turn the model's raw `propose_changes` tool input into typed
@@ -249,6 +330,22 @@ function s(v: unknown): string | undefined {
 function num(v: unknown): number | undefined {
   const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN
   return Number.isFinite(n) ? n : undefined
+}
+
+/** A de-duplicated array of non-empty trimmed strings, or undefined when absent/empty. */
+function strArr(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of v) {
+    if (typeof item !== 'string') continue
+    const t = item.trim()
+    if (t && !seen.has(t)) {
+      seen.add(t)
+      out.push(t)
+    }
+  }
+  return out.length > 0 ? out : undefined
 }
 
 /**
@@ -354,6 +451,37 @@ export function toChange(kind: string | undefined, r: Record<string, unknown>): 
       if (!contactId) return null
       return { kind, contactId }
     }
+    case 'create_project': {
+      const name = s(r.name)
+      const category = s(r.category)
+      if (!name || !category) return null
+      const c: ProposedChange = { kind, name, category }
+      set(c, 'status', status)
+      set(c, 'client', s(r.client))
+      set(c, 'phase', s(r.phase))
+      set(c, 'region', s(r.region))
+      set(c, 'parentId', s(r.parentId))
+      set(c, 'leadId', s(r.leadId))
+      set(c, 'memberIds', strArr(r.memberIds))
+      set(c, 'summary', s(r.summary))
+      return c
+    }
+    case 'update_contact': {
+      const contactId = s(r.contactId)
+      if (!contactId) return null
+      const c: ProposedChange = { kind, contactId }
+      set(c, 'phone', s(r.phone))
+      set(c, 'email', s(r.email))
+      set(c, 'org', s(r.org))
+      set(c, 'role', s(r.role))
+      set(c, 'notes', s(r.notes))
+      return c
+    }
+    case 'add_comment': {
+      const text = s(r.text)
+      if (!planId || !text) return null
+      return { kind, planId, text }
+    }
     default:
       return null
   }
@@ -410,6 +538,38 @@ export const briefTools = [
     },
   },
   {
+    name: 'list_open_items',
+    description:
+      'Read-only: list open and overdue actions and milestones with a due date in a ' +
+      'date range, across the person\'s visible projects (or one project). Use this to ' +
+      'answer questions like "what\'s overdue on NSW?" or "what\'s due this week?". ' +
+      'Dates are YYYY-MM-DD. Omit from/to for no bound on that side; set overdueOnly to ' +
+      'list only items due before today. Only items the person can see are returned.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'string', description: 'Limit to one visible project (optional).' },
+        from: { type: 'string', description: 'Earliest due date, YYYY-MM-DD (optional).' },
+        to: { type: 'string', description: 'Latest due date, YYYY-MM-DD (optional).' },
+        overdueOnly: { type: 'boolean', description: 'Only items due before today (optional).' },
+      },
+    },
+  },
+  {
+    name: 'find_contact',
+    description:
+      'Read-only: find contacts by name (partial match), with the projects they are ' +
+      'linked to and their last-contact date. Use this to answer questions like "when ' +
+      'did we last speak to Pat?". Only contacts the person can see are returned.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'All or part of the contact\'s name.' },
+      },
+      required: ['name'],
+    },
+  },
+  {
     name: 'ask_user',
     description:
       'Ask the person ONE short clarifying question when something is genuinely ' +
@@ -433,8 +593,25 @@ export const briefTools = [
     description:
       'Return the final list of proposed changes once you are confident. Each change ' +
       'must reference real ids from lookup_project. Use lookup keys (not labels) for ' +
-      'source, action type and milestone status. Dates are YYYY-MM-DD, worked out ' +
-      'from the group\'s today. Do NOT invent ids. Never delete or archive anything.',
+      'source, action type, milestone status, project status, category and region. ' +
+      "Dates are YYYY-MM-DD, worked out from the group's today. Do NOT invent ids. " +
+      'Never delete or archive anything.\n\n' +
+      'Each change kind uses exactly these fields:\n' +
+      "- log_update: planId, text, [date], [source] — a dated note on the project's history.\n" +
+      '- add_action: planId, title, [type], [who], [assigneeId], [dueOn], [milestoneId], [contactId].\n' +
+      '- update_action: actionId, [status (open/waiting/done)], [dueOn], [assigneeId], [title].\n' +
+      '- add_milestone: planId, title, [status], [dueOn], [progressPct].\n' +
+      '- update_milestone: milestoneId, [status], [dueOn], [progressPct] — a NAMED milestone only.\n' +
+      "- update_plan: planId AND the PROJECT'S OWN [status], [phase], [summary], " +
+      '[priority (normal/high)], [progressPct 0–100], [startOn], [endOn]. Use this for a ' +
+      "project's own status or progress when no milestone is named.\n" +
+      '- add_contact: planId, name, [org], [role], [phone], [email] — a new contact linked to the project.\n' +
+      '- link_contact: planId, contactId — link an existing contact to the project.\n' +
+      '- contacted_today: contactId — move the contact\'s last-contact date to today.\n' +
+      '- create_project (Managers/Group Owners only): name, category, [status], [client], ' +
+      '[phase], [region], [parentId (an EXISTING visible project)], [leadId], [memberIds], [summary].\n' +
+      '- update_contact: contactId AND only the mentioned of [phone], [email], [org], [role], [notes].\n' +
+      '- add_comment: planId, text — post a comment on the project.',
     input_schema: {
       type: 'object',
       properties: {
@@ -456,6 +633,9 @@ export const briefTools = [
                   'add_contact',
                   'link_contact',
                   'contacted_today',
+                  'create_project',
+                  'update_contact',
+                  'add_comment',
                 ],
               },
               label: { type: 'string', description: 'Plain-words line with the project name.' },
@@ -483,12 +663,36 @@ export const briefTools = [
               role: { type: 'string' },
               phone: { type: 'string' },
               email: { type: 'string' },
+              notes: { type: 'string' },
+              category: { type: 'string', description: 'create_project: a key from the group\'s category list.' },
+              client: { type: 'string' },
+              region: { type: 'string', description: 'create_project: a key from the group\'s region list.' },
+              parentId: { type: 'string', description: 'create_project: the id of an EXISTING visible project.' },
+              leadId: { type: 'string' },
+              memberIds: { type: 'array', items: { type: 'string' }, description: 'create_project: group members\' user ids.' },
             },
             required: ['kind', 'label'],
           },
         },
       },
       required: ['changes'],
+    },
+  },
+  {
+    name: 'answer',
+    description:
+      'Answer the person\'s QUESTION in plain words when they are asking something ' +
+      '("what\'s overdue on NSW?", "when did we last speak to Pat?", "who leads the ' +
+      'irrigation grant?") rather than reporting what happened. This NEVER proposes or ' +
+      'saves anything. Use list_open_items and find_contact (and lookup_project) to get ' +
+      'the facts first, then give a short, plain answer naming projects and dates. Only ' +
+      'use what the person can see. If they then ask for a change, propose it as usual.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The plain-words answer.' },
+      },
+      required: ['text'],
     },
   },
 ] as const

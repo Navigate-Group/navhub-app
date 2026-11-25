@@ -4,6 +4,8 @@ import {
   buildBriefContext,
   buildBriefSystemPrompt,
   lookupProject,
+  listOpenItems,
+  findContact,
   resolveAnthropicKey,
 } from '@/lib/tracker/brief-server'
 import {
@@ -117,6 +119,9 @@ export async function POST(request: Request) {
           max_tokens: BRIEF_MAX_TOKENS,
           system,
           tools,
+          // Require a tool every turn, so the person always gets a confirm card,
+          // a question with options, or an answer — never a bare "I will…" line.
+          tool_choice: { type: 'any' },
           messages: convo,
         }),
       })
@@ -154,7 +159,7 @@ export async function POST(request: Request) {
         .join('\n')
         .trim()
 
-      // A finishing tool (ask_user / propose_changes) ends the turn.
+      // A finishing tool (ask_user / propose_changes / answer) ends the turn.
       const ask = toolUses.find((t) => t.name === 'ask_user')
       if (ask) {
         const q = typeof ask.input.question === 'string' ? ask.input.question : 'Could you clarify?'
@@ -173,8 +178,27 @@ export async function POST(request: Request) {
         return NextResponse.json({ turn, metrics: metrics() })
       }
 
-      const lookups = toolUses.filter((t) => t.name === 'lookup_project')
-      if (lookups.length === 0) {
+      const answerTool = toolUses.find((t) => t.name === 'answer')
+      if (answerTool) {
+        const answerText =
+          typeof answerTool.input.text === 'string' && answerTool.input.text.trim()
+            ? answerTool.input.text.trim()
+            : text || "I couldn't find anything for that."
+        const turn: BriefTurn = { type: 'answer', text: answerText }
+        logMetrics('answer')
+        return NextResponse.json({ turn, metrics: metrics() })
+      }
+
+      // Read-only look-ups the model may call any number of times before it
+      // finishes: lookup_project, list_open_items, find_contact — all as the
+      // signed-in person, so RLS scopes them.
+      const reads = toolUses.filter(
+        (t) =>
+          t.name === 'lookup_project' ||
+          t.name === 'list_open_items' ||
+          t.name === 'find_contact',
+      )
+      if (reads.length === 0) {
         // No tool call — plain message (or a nudge if empty).
         const turn: BriefTurn = {
           type: 'message',
@@ -184,18 +208,31 @@ export async function POST(request: Request) {
         return NextResponse.json({ turn, metrics: metrics() })
       }
 
-      // Resolve each lookup as the signed-in person and feed the results back.
+      // Resolve each read as the signed-in person and feed the results back.
       convo.push({ role: 'assistant', content: blocks })
       const toolResults = await Promise.all(
-        lookups.map(async (t) => {
-          const projectId = typeof t.input.project_id === 'string' ? t.input.project_id : ''
-          const detail = projectId
-            ? await lookupProject(supabase, groupId, projectId)
-            : { found: false }
+        reads.map(async (t) => {
+          let result: unknown
+          if (t.name === 'lookup_project') {
+            const projectId = typeof t.input.project_id === 'string' ? t.input.project_id : ''
+            result = projectId
+              ? await lookupProject(supabase, groupId, projectId)
+              : { found: false }
+          } else if (t.name === 'list_open_items') {
+            result = await listOpenItems(supabase, groupId, briefCtx.today, {
+              projectId: typeof t.input.project_id === 'string' ? t.input.project_id : undefined,
+              from: typeof t.input.from === 'string' ? t.input.from : undefined,
+              to: typeof t.input.to === 'string' ? t.input.to : undefined,
+              overdueOnly: t.input.overdueOnly === true,
+            })
+          } else {
+            const name = typeof t.input.name === 'string' ? t.input.name : ''
+            result = await findContact(supabase, groupId, name)
+          }
           return {
             type: 'tool_result' as const,
             tool_use_id: t.id,
-            content: JSON.stringify(detail),
+            content: JSON.stringify(result),
           }
         }),
       )

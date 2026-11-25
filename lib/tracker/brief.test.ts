@@ -15,6 +15,8 @@ import {
   buildActionPatch,
   buildMilestonePatch,
   buildPlanPatch,
+  buildContactPatch,
+  createProjectRefusal,
   buildProposalTurn,
   toChange,
   clampPct,
@@ -124,7 +126,14 @@ test('milestone change only writes provided fields', () => {
     dueOn: '2026-12-05',
     progressPct: 150, // clamped to 100
   })
-  assert.deepEqual(full, { status: 'in_progress', due_on: '2026-12-05', progress_pct: 100 })
+  // A provided progress also flips the milestone to 'manual' so the hand value
+  // shows even if it was in 'from_actions' mode (see the dedicated test below).
+  assert.deepEqual(full, {
+    status: 'in_progress',
+    due_on: '2026-12-05',
+    progress_pct: 100,
+    progress_mode: 'manual',
+  })
 })
 
 // ── Validation helpers ───────────────────────────────────────────────────────
@@ -246,4 +255,174 @@ test('toChange returns null when a change lacks the ids it needs', () => {
   assert.equal(toChange('update_action', { status: 'done' }), null) // no actionId
   assert.equal(toChange('add_action', { planId: 'p1' }), null) // no title
   assert.equal(toChange('unknown_kind', { planId: 'p1' }), null)
+})
+
+// ── Part 5 fix: a raw "progress 50%" project proposal, no milestone named ─────
+
+test('raw "progress 50%" on a project yields update_plan with ONLY progress_pct', () => {
+  // The exact shape the model sends for "update the status, progress to 50%" on
+  // a project with no milestones: progress belongs to the PROJECT, so it is an
+  // update_plan with progress_pct: 50 and nothing else (no milestone change).
+  const input = {
+    changes: [
+      {
+        kind: 'update_plan',
+        label: 'Field trials – NSW: progress → 50%',
+        planId: 'p1',
+        progressPct: 50,
+      },
+    ],
+  }
+  const change = onlyChange(input)
+  assert.deepEqual(change, { kind: 'update_plan', planId: 'p1', progressPct: 50 })
+  assert.equal(change.kind, 'update_plan')
+  if (change.kind !== 'update_plan') throw new Error('wrong kind')
+  const patch = buildPlanPatch(change)
+  assert.deepEqual(patch, { progress_pct: 50 })
+  assert.ok(!('status' in patch))
+  assert.ok(!('phase' in patch))
+})
+
+// ── Part 5 fix: milestone progress switches to "set by hand" so it shows ──────
+
+test('setting a milestone progress also sets progress_mode to manual', () => {
+  // A milestone in 'from_actions' mode ignores progress_pct; setting a progress
+  // value must flip it to 'manual' so the new percentage shows on the page.
+  const patch = buildMilestonePatch({
+    kind: 'update_milestone',
+    milestoneId: 'm1',
+    progressPct: 50,
+  })
+  assert.deepEqual(patch, { progress_pct: 50, progress_mode: 'manual' })
+
+  // No progress value → no mode change (status-only edits are untouched).
+  const statusOnly = buildMilestonePatch({
+    kind: 'update_milestone',
+    milestoneId: 'm1',
+    status: 'in_progress',
+  })
+  assert.deepEqual(statusOnly, { status: 'in_progress' })
+  assert.ok(!('progress_mode' in statusOnly))
+})
+
+// ── New change kind: update_contact (only the fields given) ───────────────────
+
+test('raw model input → update_contact changes ONLY the field given', () => {
+  // "Pat's phone is now 0400 000 123" — only the phone is mentioned, so only
+  // the phone may be written; email/org/role/notes are left untouched.
+  const input = {
+    changes: [
+      {
+        kind: 'update_contact',
+        label: 'Pat Doe: phone → 0400 000 123',
+        contactId: 'ct1',
+        phone: '0400 000 123',
+      },
+    ],
+  }
+  const change = onlyChange(input)
+  assert.deepEqual(change, { kind: 'update_contact', contactId: 'ct1', phone: '0400 000 123' })
+  assert.ok(!('email' in change))
+  assert.ok(!('org' in change))
+
+  assert.equal(change.kind, 'update_contact')
+  if (change.kind !== 'update_contact') throw new Error('wrong kind')
+  const patch = buildContactPatch(change)
+  assert.deepEqual(patch, { phone: '0400 000 123' })
+  assert.ok(!('email' in patch), 'email must be left unchanged')
+  assert.ok(!('org' in patch), 'organisation must be left unchanged')
+  assert.ok(!('role' in patch))
+  assert.ok(!('notes' in patch))
+})
+
+test('update_contact needs a contactId', () => {
+  assert.equal(toChange('update_contact', { phone: '0400 000 123' }), null)
+})
+
+// ── New change kind: create_project (only the fields given) ───────────────────
+
+test('raw model input → create_project keeps only the fields given', () => {
+  // "New project Smart irrigation – stage 2, Grants, under the grant, lead Sam."
+  const input = {
+    changes: [
+      {
+        kind: 'create_project',
+        label: 'New project "Smart irrigation – stage 2" (Grants), under "Smart irrigation grant", lead Sam Lee',
+        name: 'Smart irrigation – stage 2',
+        category: 'grants',
+        parentId: 'p-parent',
+        leadId: 'u-sam',
+      },
+    ],
+  }
+  const change = onlyChange(input)
+  assert.deepEqual(change, {
+    kind: 'create_project',
+    name: 'Smart irrigation – stage 2',
+    category: 'grants',
+    parentId: 'p-parent',
+    leadId: 'u-sam',
+  })
+  // No status/client/phase/region/members/summary were given → none present.
+  assert.ok(!('status' in change))
+  assert.ok(!('client' in change))
+  assert.ok(!('region' in change))
+  assert.ok(!('memberIds' in change))
+})
+
+test('create_project needs a name AND a category', () => {
+  assert.equal(toChange('create_project', { name: 'Stage 2' }), null) // no category
+  assert.equal(toChange('create_project', { category: 'grants' }), null) // no name
+})
+
+test('create_project is refused for a non-Manager at apply time', () => {
+  const change = toChange('create_project', {
+    name: 'Stage 2',
+    category: 'grants',
+  }) as Extract<ProposedChange, { kind: 'create_project' }>
+  // A non-editor (Staff) is refused with a clear line…
+  assert.equal(
+    createProjectRefusal(change, false),
+    'Only Managers or Group Owners can create a project',
+  )
+  // …and an editor (Manager / Group Owner) may proceed.
+  assert.equal(createProjectRefusal(change, true), null)
+})
+
+// ── New change kind: add_comment ──────────────────────────────────────────────
+
+test('raw model input → add_comment carries the project and text', () => {
+  const input = {
+    changes: [
+      {
+        kind: 'add_comment',
+        label: 'Field trials 2026 – NSW: comment "Waiting on council approval before install."',
+        planId: 'p1',
+        text: 'Waiting on council approval before install.',
+      },
+    ],
+  }
+  const change = onlyChange(input)
+  assert.deepEqual(change, {
+    kind: 'add_comment',
+    planId: 'p1',
+    text: 'Waiting on council approval before install.',
+  })
+})
+
+test('add_comment needs both a project and text', () => {
+  assert.equal(toChange('add_comment', { planId: 'p1' }), null) // no text
+  assert.equal(toChange('add_comment', { text: 'hi' }), null) // no planId
+})
+
+// ── An answer reply contains no changes ───────────────────────────────────────
+
+test('an answer turn (no propose_changes) proposes nothing', () => {
+  // The route turns an `answer` tool call into a plain-text turn and never
+  // builds a proposal. A propose_changes call with an empty changes list — the
+  // nearest raw-input check available here — likewise yields no changes.
+  const turn = buildProposalTurn({ changes: [] }, 'Nothing to change')
+  assert.equal(turn.type, 'proposal')
+  if (turn.type !== 'proposal') throw new Error('not a proposal')
+  assert.equal(turn.changes.length, 0)
 })
