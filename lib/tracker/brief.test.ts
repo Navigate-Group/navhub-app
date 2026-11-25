@@ -15,8 +15,11 @@ import {
   buildActionPatch,
   buildMilestonePatch,
   buildPlanPatch,
+  buildProposalTurn,
+  toChange,
   clampPct,
   isIsoDate,
+  type ProposedChange,
 } from './brief.ts'
 
 // ── The two cases the brief calls out explicitly ─────────────────────────────
@@ -150,4 +153,97 @@ test('isIsoDate and clampPct behave', () => {
   assert.equal(clampPct(42.6), 43)
   assert.equal(clampPct(null), undefined)
   assert.equal(clampPct(undefined), undefined)
+})
+
+// ── The full pipeline: raw model input → change → final patch ────────────────
+//
+// These start from the exact shape the model hands the `propose_changes` tool
+// (a loose Record<string, unknown>) and run it through buildProposalTurn /
+// toChange and then the patch builder, mirroring what the route and apply route
+// do. This is the step where the data-loss bug began, so the guarantee is
+// checked end to end, not just on the builders.
+
+/** Pull the single change of the given kind out of a proposal turn. */
+function onlyChange(input: Record<string, unknown>): ProposedChange {
+  const turn = buildProposalTurn(input, null)
+  assert.equal(turn.type, 'proposal')
+  if (turn.type !== 'proposal') throw new Error('not a proposal')
+  assert.equal(turn.changes.length, 1)
+  return turn.changes[0].change
+}
+
+test('raw model input → patch: a status-only project change leaves every other field out', () => {
+  // Exactly what the model sends for "mark this project at risk": a kind, a
+  // label, the project id and a status — nothing else.
+  const input = {
+    intro: 'One change',
+    changes: [
+      {
+        kind: 'update_plan',
+        label: 'Field trials – NSW: set status to At risk',
+        planId: 'p1',
+        status: 'at_risk',
+      },
+    ],
+  }
+
+  const change = onlyChange(input)
+  assert.deepEqual(change, { kind: 'update_plan', planId: 'p1', status: 'at_risk' })
+  // phase/summary/etc never entered the typed change…
+  assert.ok(!('phase' in change))
+  assert.ok(!('summary' in change))
+
+  // …and so never reach the database patch.
+  assert.equal(change.kind, 'update_plan')
+  if (change.kind !== 'update_plan') throw new Error('wrong kind')
+  const patch = buildPlanPatch(change)
+  assert.deepEqual(patch, { status: 'at_risk' })
+  assert.ok(!('phase' in patch), 'phase must be left unchanged')
+  assert.ok(!('summary' in patch), 'summary must be left unchanged')
+  assert.ok(!('priority' in patch))
+  assert.ok(!('progress_pct' in patch))
+})
+
+test('raw model input → patch: a done-only action change leaves every other field out', () => {
+  const input = {
+    changes: [
+      {
+        kind: 'update_action',
+        label: 'Chase supplier: mark done',
+        actionId: 'a1',
+        status: 'done',
+      },
+    ],
+  }
+
+  const change = onlyChange(input)
+  assert.deepEqual(change, { kind: 'update_action', actionId: 'a1', status: 'done' })
+  assert.ok(!('assigneeId' in change))
+  assert.ok(!('dueOn' in change))
+  assert.ok(!('title' in change))
+
+  assert.equal(change.kind, 'update_action')
+  if (change.kind !== 'update_action') throw new Error('wrong kind')
+  const patch = buildActionPatch(change)
+  assert.deepEqual(patch, { status: 'done' })
+  assert.ok(!('assignee_id' in patch), 'assignee must be left unchanged')
+  assert.ok(!('due_on' in patch), 'due date must be left unchanged')
+  assert.ok(!('title' in patch), 'title must be left unchanged')
+})
+
+test('toChange drops empty strings so blanks never become writes', () => {
+  // The model sometimes emits '' for fields it means to leave alone; these must
+  // be treated as absent, not as an explicit value.
+  const change = toChange('update_plan', { planId: 'p1', status: 'on_track', phase: '', summary: '   ' })
+  assert.deepEqual(change, { kind: 'update_plan', planId: 'p1', status: 'on_track' })
+  assert.equal(change?.kind, 'update_plan')
+  if (change?.kind !== 'update_plan') throw new Error('wrong kind')
+  assert.deepEqual(buildPlanPatch(change), { status: 'on_track' })
+})
+
+test('toChange returns null when a change lacks the ids it needs', () => {
+  assert.equal(toChange('update_plan', { status: 'at_risk' }), null) // no planId
+  assert.equal(toChange('update_action', { status: 'done' }), null) // no actionId
+  assert.equal(toChange('add_action', { planId: 'p1' }), null) // no title
+  assert.equal(toChange('unknown_kind', { planId: 'p1' }), null)
 })

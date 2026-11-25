@@ -19,6 +19,12 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   const patch: Record<string, unknown> = {}
+  // { archive: true } archives (hides from lists but keeps history);
+  // { archive: false } restores. Managers / Group Owners only — the database
+  // refuses others, surfaced as a clear 403.
+  if (typeof body.archive === 'boolean') {
+    patch.archived_at = body.archive ? new Date().toISOString() : null
+  }
   if ('name' in body) {
     const name = strOrNull(body.name)
     if (!name) return NextResponse.json({ error: 'A contact name is required' }, { status: 422 })

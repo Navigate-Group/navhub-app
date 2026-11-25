@@ -30,6 +30,8 @@ export type ActionItem = {
   // Whether the signed-in user may use the quick buttons on this action
   // (full edit access, or they are the assignee).
   canQuick: boolean
+  // Archived actions are only shown when "Show archived" is on (Managers only).
+  archived?: boolean
 }
 
 type Quick = 'done' | 'plus_day' | 'plus_week' | 'waiting' | 'back_to_me' | 'reopen'
@@ -45,6 +47,7 @@ export default function ActionsSection({
   actions,
   canEdit,
   canDelete,
+  canArchive,
   chaserDays,
   today,
   types,
@@ -57,6 +60,8 @@ export default function ActionsSection({
   actions: ActionItem[]
   canEdit: boolean
   canDelete: boolean
+  // Managers / Group Owners may archive / restore (the database enforces too).
+  canArchive: boolean
   chaserDays: number
   today: string
   types: Option[]
@@ -165,6 +170,28 @@ export default function ActionsSection({
     }
   }
 
+  async function onArchive(a: ActionItem, archive: boolean) {
+    setError(null)
+    setBusyId(a.id)
+    try {
+      const res = await fetch(`/api/tracker/actions/${a.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archive }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.error || (archive ? 'Could not archive the action' : 'Could not restore the action'))
+      } else {
+        router.refresh()
+      }
+    } catch {
+      setError(archive ? 'Could not archive the action' : 'Could not restore the action')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const emptyInitial: ActionValues = {
     title: '',
     type: '',
@@ -183,6 +210,9 @@ export default function ActionsSection({
   const displayActions = actions
     .map((a) => (overrides[a.id] ? { ...a, ...overrides[a.id] } : a))
     .sort((a, b) => {
+      // Archived rows sink below everything; then open before done.
+      const arch = (x: ActionItem) => (x.archived ? 1 : 0)
+      if (arch(a) !== arch(b)) return arch(a) - arch(b)
       const rank = (s: string) => (s === 'done' ? 1 : 0)
       return rank(a.status) - rank(b.status)
     })
@@ -213,7 +243,8 @@ export default function ActionsSection({
                   <Badge variant={a.status === 'done' ? 'success' : a.status === 'waiting' ? 'warning' : 'secondary'}>
                     {a.status === 'done' ? 'Done' : a.status === 'waiting' ? 'Waiting' : 'Open'}
                   </Badge>
-                  <span className="font-medium">{a.title}</span>
+                  <span className={cn('font-medium', a.archived && 'text-muted-foreground line-through')}>{a.title}</span>
+                  {a.archived && <Badge variant="outline">Archived</Badge>}
                   {a.typeLabel && <span className="text-muted-foreground">{a.typeLabel}</span>}
                   <span className="text-muted-foreground">
                     {a.assigneeName || a.who || '—'}
@@ -225,19 +256,30 @@ export default function ActionsSection({
                       Waiting {waitingDays} day{waitingDays === 1 ? '' : 's'}
                     </span>
                   )}
-                  {(canEdit || canDelete) && (
+                  {(canEdit || canDelete || canArchive) && (
                     <span className="ml-auto flex gap-1">
-                      {canEdit && (
-                        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditing(a)}>Edit</Button>
-                      )}
-                      {canDelete && (
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => setDeleting(a)}>Delete</Button>
+                      {a.archived ? (
+                        canArchive && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2" disabled={busy} onClick={() => onArchive(a, false)}>Restore</Button>
+                        )
+                      ) : (
+                        <>
+                          {canEdit && (
+                            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditing(a)}>Edit</Button>
+                          )}
+                          {canArchive && (
+                            <Button size="sm" variant="ghost" className="h-7 px-2" disabled={busy} onClick={() => onArchive(a, true)}>Archive</Button>
+                          )}
+                          {canDelete && (
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => setDeleting(a)}>Delete</Button>
+                          )}
+                        </>
                       )}
                     </span>
                   )}
                 </div>
 
-                {a.canQuick && (
+                {a.canQuick && !a.archived && (
                   <div className="flex flex-wrap gap-1.5">
                     {a.status === 'open' && (
                       <>

@@ -34,13 +34,23 @@ import { DEFAULT_SETTINGS } from '@/lib/tracker/domain'
 
 export const dynamic = 'force-dynamic'
 
-export default async function PlanDetailPage({ params }: { params: { id: string } }) {
+export default async function PlanDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string }
+  searchParams?: { archived?: string }
+}) {
   noStore()
 
   const ctx = await getTrackerContext()
   if (!ctx) redirect('/home')
   const { supabase, userId, groupId } = ctx
   const planId = params.id
+  // "Show archived" is a Managers-only view: when on, the milestone / action /
+  // contact lists also include archived rows (each marked), so they can be
+  // restored. Gated by `editor` below so a non-Manager can't force it via URL.
+  const wantArchived = searchParams?.archived === '1'
 
   const { data: plan } = await supabase
     .from('tracker_project_plans')
@@ -81,6 +91,25 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
     getTrackerHeaderData(ctx),
   ])
   const isOwner = plan.owner_id === userId
+  // Only Managers / Group Owners may see archived rows.
+  const showArchived = editor && wantArchived
+
+  // Milestones / actions: live rows only, unless "Show archived" is on (then
+  // archived rows come too, each marked so they render with a Restore button).
+  let milestonesQuery = supabase
+    .from('tracker_milestones')
+    .select('id, title, description, owner_id, status, health, start_on, due_on, baseline_due_on, priority, progress_mode, progress_pct, sort_order, archived_at')
+    .eq('group_id', groupId)
+    .eq('plan_id', planId)
+  if (!showArchived) milestonesQuery = milestonesQuery.is('archived_at', null)
+  milestonesQuery = milestonesQuery.order('sort_order', { ascending: true })
+
+  let actionsQuery = supabase
+    .from('tracker_actions')
+    .select('id, title, type, who, assignee_id, due_on, status, priority, milestone_id, contact_id, notes, waiting_since, archived_at')
+    .eq('group_id', groupId)
+    .eq('plan_id', planId)
+  if (!showArchived) actionsQuery = actionsQuery.is('archived_at', null)
 
   // The rest of the page's reads don't depend on each other — only on the plan
   // we just found — so run them all at the same time (Promise.all) rather than
@@ -117,23 +146,12 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
       .eq('parent_id', planId)
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true }),
-    supabase
-      .from('tracker_milestones')
-      .select('id, title, description, owner_id, status, health, start_on, due_on, baseline_due_on, priority, progress_mode, progress_pct, sort_order')
-      .eq('group_id', groupId)
-      .eq('plan_id', planId)
-      .is('archived_at', null)
-      .order('sort_order', { ascending: true }),
+    milestonesQuery,
     supabase
       .from('tracker_v_milestone_progress')
       .select('milestone_id, status, due_on, done_actions, total_actions, progress_pct, days_slipped, overdue')
       .eq('plan_id', planId),
-    supabase
-      .from('tracker_actions')
-      .select('id, title, type, who, assignee_id, due_on, status, priority, milestone_id, contact_id, notes, waiting_since')
-      .eq('group_id', groupId)
-      .eq('plan_id', planId)
-      .is('archived_at', null),
+    actionsQuery,
     supabase
       .from('tracker_updates')
       .select('id, kind, date, source, text, author_id')
@@ -142,7 +160,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
       .order('date', { ascending: false }),
     supabase
       .from('tracker_contact_plans')
-      .select('contact:tracker_contacts(id, name, org, role, phone, email, notes, last_contact)')
+      .select('contact:tracker_contacts(id, name, org, role, phone, email, notes, last_contact, archived_at)')
       .eq('group_id', groupId)
       .eq('plan_id', planId),
     supabase
@@ -196,10 +214,14 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
   })
 
   // Contacts linked to the plan (full details for the side box and the action
-  // Contact picker).
-  const contacts: ContactDetail[] = ((contactLinks ?? []) as unknown as { contact: ContactDetail | ContactDetail[] | null }[])
+  // Contact picker). The join carries archived_at so archived contacts can be
+  // dropped (or shown + marked when "Show archived" is on).
+  type RawContact = Omit<ContactDetail, 'archived'> & { archived_at: string | null }
+  const contacts: ContactDetail[] = ((contactLinks ?? []) as unknown as { contact: RawContact | RawContact[] | null }[])
     .map((c) => (Array.isArray(c.contact) ? c.contact[0] ?? null : c.contact))
-    .filter((c): c is ContactDetail => c != null)
+    .filter((c): c is RawContact => c != null)
+    .filter((c) => showArchived || c.archived_at === null)
+    .map((c) => ({ ...c, archived: c.archived_at !== null }))
     .sort((a, b) => a.name.localeCompare(b.name))
   const linkedIds = new Set(contacts.map((c) => c.id))
 
@@ -257,8 +279,12 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
     { key: 'normal', label: 'Normal' },
     { key: 'high', label: 'High' },
   ]
-  const milestoneOptions = (milestones ?? []).map((m) => ({ id: m.id as string, title: m.title as string }))
-  const contactOptions = contacts.map((c) => ({ id: c.id, name: c.name }))
+  // Pickers offer live items only — an archived milestone / contact can't be
+  // the target of a new link.
+  const milestoneOptions = (milestones ?? [])
+    .filter((m) => (m.archived_at as string | null) == null)
+    .map((m) => ({ id: m.id as string, title: m.title as string }))
+  const contactOptions = contacts.filter((c) => !c.archived).map((c) => ({ id: c.id, name: c.name }))
 
   const milestoneItems: MilestoneItem[] = (milestones ?? []).map((m) => {
     const p = progressById.get(m.id as string)
@@ -285,6 +311,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
       // Only the milestone's owner or a Manager / Group Owner may move the
       // baseline (the DB enforces too — guard in 085).
       canEditBaseline: editor || (m.owner_id as string | null) === userId,
+      archived: (m.archived_at as string | null) !== null,
     }
   })
 
@@ -307,6 +334,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
     // The quick buttons are for anyone with edit access or the action's own
     // assignee (even without project access). The DB enforces too.
     canQuick: canEdit || (a.assignee_id as string | null) === userId,
+    archived: (a.archived_at as string | null) !== null,
   }))
 
   // Comment view-models. The author edits / deletes their own; Managers / Group
@@ -371,6 +399,17 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
             </>
           )}
           <span className="truncate">{plan.name as string}</span>
+          {/* Show archived toggle — Managers / Group Owners only. Archived
+              milestones, actions and contacts then appear (marked) so they can
+              be restored. Plain links so it works without client JS. */}
+          {editor && (
+            <Link
+              href={showArchived ? `/tracker/plans/${planId}` : `/tracker/plans/${planId}?archived=1`}
+              className={cn('ml-auto hover:underline', showArchived && 'font-medium text-foreground')}
+            >
+              {showArchived ? 'Hide archived' : 'Show archived'}
+            </Link>
+          )}
         </div>
 
         <div className="flex items-center gap-2 text-sm">
@@ -447,6 +486,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
             milestones={milestoneItems}
             canEdit={canEdit}
             canDelete={editor}
+            canArchive={editor}
             statuses={milestoneStatusOptions}
             priorities={priorityOptions}
             people={peopleOptions}
@@ -458,6 +498,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
             actions={actionItems}
             canEdit={canEdit}
             canDelete={editor}
+            canArchive={editor}
             chaserDays={chaserDays}
             today={today}
             types={actionTypeOptions}
@@ -582,6 +623,7 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
               planId={planId}
               contacts={contacts}
               canEdit={canEdit}
+              canArchive={editor}
               linkable={linkableContacts}
             />
           )}

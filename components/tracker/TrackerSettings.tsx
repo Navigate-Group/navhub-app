@@ -285,6 +285,10 @@ function ParentProjectsCard({
   regions: SettingsOption[]
 }) {
   const [addOpen, setAddOpen] = useState(false)
+  // A just-added parent won't appear in the list below until a project is
+  // placed under it, so confirm the add explicitly (otherwise nothing seems to
+  // happen). Cleared when the dialog is re-opened.
+  const [added, setAdded] = useState(false)
 
   const rows = useMemo(
     () => [...initial].sort((a, b) => a.name.localeCompare(b.name)),
@@ -298,11 +302,26 @@ function ParentProjectsCard({
           Projects that have sub-projects. Add one here, then pick it as the
           Parent on the New / Edit project form.
         </FieldHint>
-        <Button type="button" variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setAdded(false)
+            setAddOpen(true)
+          }}
+        >
           <Plus className="mr-1 h-4 w-4" aria-hidden />
           Add parent project
         </Button>
       </div>
+
+      {added && (
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          Added. It&apos;s now in the Parent project list on the project form, and
+          will show here once a project is placed under it.
+        </p>
+      )}
 
       <ul className="divide-y rounded-md border">
         {rows.length === 0 && (
@@ -327,6 +346,7 @@ function ParentProjectsCard({
         onOpenChange={setAddOpen}
         categories={categories}
         regions={regions}
+        onAdded={() => setAdded(true)}
       />
     </FormSection>
   )
@@ -337,11 +357,14 @@ function AddParentProjectDialog({
   onOpenChange,
   categories,
   regions,
+  onAdded,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   categories: SettingsOption[]
   regions: SettingsOption[]
+  // Called after a successful add so the card can confirm it to the user.
+  onAdded: () => void
 }) {
   const router = useRouter()
   const [name, setName] = useState('')
@@ -387,8 +410,11 @@ function AddParentProjectDialog({
       setSaving(false)
       reset()
       onOpenChange(false)
-      // Refresh so the new project shows in the list here and in the project
-      // form's Parent dropdown.
+      // Confirm the add in the card — the new parent has no sub-projects yet,
+      // so it won't appear in the list below until a project is placed under it.
+      onAdded()
+      // Refresh so the new project shows in the project form's Parent dropdown
+      // (and here, once it has sub-projects).
       router.refresh()
     } catch {
       setError('Could not add the parent project')

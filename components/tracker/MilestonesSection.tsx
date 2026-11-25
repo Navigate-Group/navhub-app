@@ -12,6 +12,7 @@ import MilestoneForm, {
   type Person,
 } from '@/components/tracker/MilestoneForm'
 import { formatDate } from '@/lib/tracker/view'
+import { cn } from '@/lib/utils'
 
 export type MilestoneItem = {
   id: string
@@ -35,6 +36,8 @@ export type MilestoneItem = {
   statusLabel: string
   // Whether the current user may move this milestone's baseline (owner or editor).
   canEditBaseline: boolean
+  // Archived milestones are only shown when "Show archived" is on (Managers only).
+  archived?: boolean
 }
 
 /**
@@ -47,6 +50,7 @@ export default function MilestonesSection({
   milestones,
   canEdit,
   canDelete,
+  canArchive,
   statuses,
   priorities,
   people,
@@ -55,6 +59,8 @@ export default function MilestonesSection({
   milestones: MilestoneItem[]
   canEdit: boolean
   canDelete: boolean
+  // Managers / Group Owners may archive / restore (the database enforces too).
+  canArchive: boolean
   statuses: Option[]
   priorities: Option[]
   people: Person[]
@@ -63,6 +69,7 @@ export default function MilestonesSection({
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<MilestoneItem | null>(null)
   const [deleting, setDeleting] = useState<MilestoneItem | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function onDelete(m: MilestoneItem) {
@@ -78,6 +85,28 @@ export default function MilestonesSection({
       }
     } catch {
       setError('Could not delete the milestone')
+    }
+  }
+
+  async function onArchive(m: MilestoneItem, archive: boolean) {
+    setError(null)
+    setBusyId(m.id)
+    try {
+      const res = await fetch(`/api/tracker/milestones/${m.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archive }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.error || (archive ? 'Could not archive the milestone' : 'Could not restore the milestone'))
+      } else {
+        router.refresh()
+      }
+    } catch {
+      setError(archive ? 'Could not archive the milestone' : 'Could not restore the milestone')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -115,19 +144,47 @@ export default function MilestonesSection({
             return (
               <li key={m.id} className="space-y-1">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                  <span className="font-medium">{m.title}</span>
+                  <span className={cn('font-medium', m.archived && 'text-muted-foreground line-through')}>{m.title}</span>
                   <Badge variant="secondary">{m.statusLabel || m.status}</Badge>
+                  {m.archived && <Badge variant="outline">Archived</Badge>}
                   {m.due_on && <span className="text-muted-foreground">due {formatDate(m.due_on)}</span>}
                   <span className="text-muted-foreground">{m.doneActions} of {m.totalActions} · {pct}%</span>
                   {m.daysSlipped > 0 && <Badge variant="warning">{m.daysSlipped} days slipped</Badge>}
                   {m.overdue && <Badge variant="error">Overdue</Badge>}
-                  {(canEdit || canDelete) && (
+                  {(canEdit || canDelete || canArchive) && (
                     <span className="ml-auto flex gap-1">
-                      {canEdit && (
-                        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditing(m)}>Edit</Button>
-                      )}
-                      {canDelete && (
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => setDeleting(m)}>Delete</Button>
+                      {m.archived ? (
+                        canArchive && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2"
+                            disabled={busyId === m.id}
+                            onClick={() => onArchive(m, false)}
+                          >
+                            Restore
+                          </Button>
+                        )
+                      ) : (
+                        <>
+                          {canEdit && (
+                            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditing(m)}>Edit</Button>
+                          )}
+                          {canArchive && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2"
+                              disabled={busyId === m.id}
+                              onClick={() => onArchive(m, true)}
+                            >
+                              Archive
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => setDeleting(m)}>Delete</Button>
+                          )}
+                        </>
                       )}
                     </span>
                   )}

@@ -227,6 +227,164 @@ export function buildPlanPatch(
   return patch
 }
 
+// ── Reading the model's propose_changes input ────────────────────────────────
+//
+// These turn the model's raw `propose_changes` tool input into typed
+// ProposedChangeItems — the first half of the pipeline that ends at the patch
+// builders above. The same omit-don't-clear rule governs here: a field the
+// model did NOT provide is left `undefined` (never coerced to `null`), so the
+// apply route only writes fields the model actually meant to set. `set()` adds
+// a key only when the value is defined; this is what keeps a status-only
+// project change from carrying its phase/summary, or a done-only action change
+// from carrying its assignee. (Moved here from the brief route so the step can
+// be tested from raw model input through to the final patch.)
+
+/** Trim a possibly-missing string field; '' / non-strings become undefined. */
+function s(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined
+  const t = v.trim()
+  return t === '' ? undefined : t
+}
+
+function num(v: unknown): number | undefined {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN
+  return Number.isFinite(n) ? n : undefined
+}
+
+/**
+ * Turn the model's raw change into a typed ProposedChange. A field the model
+ * did NOT provide is OMITTED (left `undefined`), never coerced to `null` — so
+ * the apply route only ever writes fields the model actually meant to set, and
+ * never wipes data the person didn't mention.
+ */
+export function toChange(kind: string | undefined, r: Record<string, unknown>): ProposedChange | null {
+  const planId = s(r.planId)
+  const status = s(r.status)
+
+  /** Assign a field only when it has a real value (omit when undefined). */
+  const set = <T extends Record<string, unknown>, K extends string>(
+    obj: T,
+    key: K,
+    value: unknown,
+  ): void => {
+    if (value !== undefined) (obj as Record<string, unknown>)[key] = value
+  }
+
+  switch (kind) {
+    case 'log_update': {
+      const text = s(r.text)
+      if (!planId || !text) return null
+      const c: ProposedChange = { kind, planId, text }
+      set(c, 'date', s(r.date))
+      set(c, 'source', s(r.source))
+      return c
+    }
+    case 'add_action': {
+      const title = s(r.title)
+      if (!planId || !title) return null
+      const c: ProposedChange = { kind, planId, title }
+      set(c, 'type', s(r.type))
+      set(c, 'who', s(r.who))
+      set(c, 'assigneeId', s(r.assigneeId))
+      set(c, 'dueOn', s(r.dueOn))
+      set(c, 'milestoneId', s(r.milestoneId))
+      set(c, 'contactId', s(r.contactId))
+      return c
+    }
+    case 'update_action': {
+      const actionId = s(r.actionId)
+      if (!actionId) return null
+      const st =
+        status === 'open' || status === 'waiting' || status === 'done' ? status : undefined
+      const c: ProposedChange = { kind, actionId }
+      set(c, 'status', st)
+      set(c, 'dueOn', s(r.dueOn))
+      set(c, 'assigneeId', s(r.assigneeId))
+      set(c, 'title', s(r.title))
+      return c
+    }
+    case 'add_milestone': {
+      const title = s(r.title)
+      if (!planId || !title) return null
+      const c: ProposedChange = { kind, planId, title }
+      set(c, 'status', s(r.status))
+      set(c, 'dueOn', s(r.dueOn))
+      set(c, 'progressPct', num(r.progressPct))
+      return c
+    }
+    case 'update_milestone': {
+      const milestoneId = s(r.milestoneId)
+      if (!milestoneId) return null
+      const c: ProposedChange = { kind, milestoneId }
+      set(c, 'status', s(r.status))
+      set(c, 'dueOn', s(r.dueOn))
+      set(c, 'progressPct', num(r.progressPct))
+      return c
+    }
+    case 'update_plan': {
+      if (!planId) return null
+      const pri = s(r.priority)
+      const c: ProposedChange = { kind, planId }
+      set(c, 'status', s(r.status))
+      set(c, 'phase', s(r.phase))
+      set(c, 'summary', s(r.summary))
+      set(c, 'priority', pri === 'high' || pri === 'normal' ? pri : undefined)
+      set(c, 'progressPct', num(r.progressPct))
+      set(c, 'startOn', s(r.startOn))
+      set(c, 'endOn', s(r.endOn))
+      return c
+    }
+    case 'add_contact': {
+      const name = s(r.name)
+      if (!planId || !name) return null
+      const c: ProposedChange = { kind, planId, name }
+      set(c, 'org', s(r.org))
+      set(c, 'role', s(r.role))
+      set(c, 'phone', s(r.phone))
+      set(c, 'email', s(r.email))
+      return c
+    }
+    case 'link_contact': {
+      const contactId = s(r.contactId)
+      if (!planId || !contactId) return null
+      return { kind, planId, contactId }
+    }
+    case 'contacted_today': {
+      const contactId = s(r.contactId)
+      if (!contactId) return null
+      return { kind, contactId }
+    }
+    default:
+      return null
+  }
+}
+
+/**
+ * Turn the model's `propose_changes` input into a proposal BriefTurn. Each raw
+ * change is normalised to one of the known kinds via toChange(); anything that
+ * doesn't carry the ids it needs is dropped (the apply route validates again
+ * anyway).
+ */
+export function buildProposalTurn(
+  input: Record<string, unknown>,
+  fallbackIntro: string | null,
+): BriefTurn {
+  const intro = s(input.intro) ?? fallbackIntro
+  const raw = Array.isArray(input.changes) ? input.changes : []
+  const items: ProposedChangeItem[] = []
+
+  raw.forEach((rc, i) => {
+    if (typeof rc !== 'object' || rc === null) return
+    const r = rc as Record<string, unknown>
+    const kind = s(r.kind)
+    const label = s(r.label) ?? 'Change'
+    const change = toChange(kind, r)
+    if (change) items.push({ id: `c${i}`, label, change })
+  })
+
+  return { type: 'proposal', intro, changes: items }
+}
+
 // ── Anthropic tool schemas ───────────────────────────────────────────────────
 
 /**
