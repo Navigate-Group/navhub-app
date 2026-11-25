@@ -29,7 +29,7 @@ export default function TrackerTabs({
     { href: '/tracker/my-week', label: 'My week' },
     { href: '/tracker/plans', label: 'Projects' },
     { href: '/tracker/people', label: 'People' },
-    { href: '/tracker/weekly-review', label: 'Weekly review', soon: true },
+    { href: '/tracker/weekly-review', label: 'Weekly review' },
     ...(showSettings ? [{ href: '/tracker/settings', label: 'Settings' }] : []),
   ]
 
