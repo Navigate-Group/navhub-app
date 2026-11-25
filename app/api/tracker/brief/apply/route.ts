@@ -125,6 +125,40 @@ function permissionMessage(error: { code?: string; message?: string } | null, em
 }
 
 /**
+ * The plain-words "couldn't be found" line for an item the change references.
+ * Shown when a pre-check finds no readable row for the id — i.e. the id is
+ * wrong, or the person can't see it at all — as opposed to a genuine RLS write
+ * refusal on a row they CAN see (which keeps the permission message).
+ */
+type ItemType = 'action' | 'milestone' | 'project' | 'contact'
+function notFoundMessage(type: ItemType): string {
+  return `That ${type} couldn't be found. Try the briefing again.`
+}
+
+/**
+ * Pre-check that the referenced row exists and is readable by the person (the
+ * SELECT runs through their own server client, so RLS scopes it). Returns a
+ * "couldn't be found" message when there is no readable row, or null to proceed.
+ * A genuine write refusal on a row they CAN read is left to the update's own
+ * permissionMessage, which keeps the "you don't have permission" line.
+ */
+async function ensureReadable(
+  supabase: SupabaseClient,
+  groupId: string,
+  table: string,
+  id: string,
+  type: ItemType,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from(table)
+    .select('id')
+    .eq('group_id', groupId)
+    .eq('id', id)
+    .maybeSingle()
+  return data ? null : notFoundMessage(type)
+}
+
+/**
  * Apply a single change through the server client. Returns an error string on
  * failure, or null on success. Mirrors the validation and writes of the
  * existing tracker routes (actions, milestones, updates, plans, contacts) so
@@ -149,6 +183,8 @@ async function applyOne(
     case 'log_update': {
       if (!change.planId) return 'A project is required'
       if (!change.text?.trim()) return 'An update needs some text'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_project_plans', change.planId, 'project')
+      if (nf) return nf
       if (!keyOk(validKeys, 'source', change.source)) return 'Unknown update source'
       const insert: Record<string, unknown> = {
         group_id: groupId,
@@ -164,6 +200,17 @@ async function applyOne(
     case 'add_action': {
       if (!change.planId) return 'A project is required'
       if (!change.title?.trim()) return 'An action title is required'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_project_plans', change.planId, 'project')
+      if (nf) return nf
+      // A named milestone/contact to attach must exist and be readable too.
+      if (change.milestoneId) {
+        const mNf = await ensureReadable(supabase, groupId, 'tracker_milestones', change.milestoneId, 'milestone')
+        if (mNf) return mNf
+      }
+      if (change.contactId) {
+        const cNf = await ensureReadable(supabase, groupId, 'tracker_contacts', change.contactId, 'contact')
+        if (cNf) return cNf
+      }
       if (!keyOk(validKeys, 'action_type', change.type)) return 'Unknown action type'
       const insert: Record<string, unknown> = {
         group_id: groupId,
@@ -184,6 +231,8 @@ async function applyOne(
 
     case 'update_action': {
       if (!change.actionId) return 'An action is required'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_actions', change.actionId, 'action')
+      if (nf) return nf
       let patch: Record<string, unknown>
       try {
         patch = buildActionPatch(change)
@@ -239,6 +288,8 @@ async function applyOne(
     case 'add_milestone': {
       if (!change.planId) return 'A project is required'
       if (!change.title?.trim()) return 'A milestone title is required'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_project_plans', change.planId, 'project')
+      if (nf) return nf
       if (!keyOk(validKeys, 'milestone_status', change.status)) return 'Unknown milestone status'
       const insert: Record<string, unknown> = {
         group_id: groupId,
@@ -254,6 +305,8 @@ async function applyOne(
 
     case 'update_milestone': {
       if (!change.milestoneId) return 'A milestone is required'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_milestones', change.milestoneId, 'milestone')
+      if (nf) return nf
       if (!keyOk(validKeys, 'milestone_status', change.status)) return 'Unknown milestone status'
       let patch: Record<string, unknown>
       try {
@@ -272,6 +325,8 @@ async function applyOne(
 
     case 'update_plan': {
       if (!change.planId) return 'A project is required'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_project_plans', change.planId, 'project')
+      if (nf) return nf
       if (!keyOk(validKeys, 'status', change.status)) return 'Unknown project status'
       let patch: Record<string, unknown>
       try {
@@ -291,6 +346,8 @@ async function applyOne(
     case 'add_contact': {
       if (!change.planId) return 'A project is required'
       if (!change.name?.trim()) return 'A contact name is required'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_project_plans', change.planId, 'project')
+      if (nf) return nf
       const { data: created, error: createErr } = await supabase
         .from('tracker_contacts')
         .insert({
@@ -316,6 +373,10 @@ async function applyOne(
     case 'link_contact': {
       if (!change.planId) return 'A project is required'
       if (!change.contactId) return 'A contact is required'
+      const planNf = await ensureReadable(supabase, groupId, 'tracker_project_plans', change.planId, 'project')
+      if (planNf) return planNf
+      const contactNf = await ensureReadable(supabase, groupId, 'tracker_contacts', change.contactId, 'contact')
+      if (contactNf) return contactNf
       const { error } = await supabase
         .from('tracker_contact_plans')
         .upsert(
@@ -327,6 +388,8 @@ async function applyOne(
 
     case 'contacted_today': {
       if (!change.contactId) return 'A contact is required'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_contacts', change.contactId, 'contact')
+      if (nf) return nf
       const { data, error } = await supabase
         .from('tracker_contacts')
         .update({ last_contact: today })
@@ -393,6 +456,8 @@ async function applyOne(
 
     case 'update_contact': {
       if (!change.contactId) return 'A contact is required'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_contacts', change.contactId, 'contact')
+      if (nf) return nf
       // Same "omit what wasn't given" rule as the project/action patches: only
       // the fields the person mentioned are written; the rest are left as they
       // were. Mirrors PATCH /api/tracker/contacts/[id].
@@ -409,6 +474,8 @@ async function applyOne(
     case 'add_comment': {
       if (!change.planId) return 'A project is required'
       if (!change.text?.trim()) return 'A comment needs some text'
+      const nf = await ensureReadable(supabase, groupId, 'tracker_project_plans', change.planId, 'project')
+      if (nf) return nf
       // Project comment, same shape as POST /api/tracker/comments. RLS requires
       // comment (or edit) access, or a Manager role — a refusal reads as the
       // usual permission message.
