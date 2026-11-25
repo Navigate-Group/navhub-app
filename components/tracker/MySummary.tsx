@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { formatDate, daysBetweenISO, statusDotClasses } from '@/lib/tracker/view'
+import BriefingAgent from '@/components/tracker/BriefingAgent'
 
 /**
  * My Summary (reworked My week) — client view.
@@ -249,9 +250,10 @@ export default function MySummary({
         <Tile label="Closed this week" value={tiles.closedThisWeek} tone="green" />
       </div>
 
-      {/* Placeholder space for the Briefing agent's "Brief me" box (next change).
-          Nothing is shown for now; the slot keeps the layout stable. */}
-      <div data-briefing-placeholder aria-hidden className="hidden" />
+      {/* The Briefing agent's "Brief me" box, between the tiles and My open
+          items / My projects. It self-contains its conversation and apply flow
+          and refreshes the page quietly after changes are applied. */}
+      <BriefingAgent />
 
       {error && (
         <p className="text-sm text-destructive" role="alert">
