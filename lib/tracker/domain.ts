@@ -392,17 +392,24 @@ export function myPlanIds(plans: Plan[], userId: string, access: PlanAccess = {}
 }
 
 /**
- * Plan ids whose actions I may act on with the quick buttons: projects I own or
- * lead, or where I have an Edit share. (Managers / Group Owners are handled by
- * the caller via an `isEditor` flag; an action's own assignee is always
- * allowed, decided per-action.) Members and Comment access do not grant this.
+ * Plan ids whose actions I may act on with the quick buttons (Done, +1 day,
+ * +1 week, Waiting): projects where I have an **Edit** share — and every
+ * sub-project of one of those, since access to a parent includes its
+ * sub-projects. (Managers / Group Owners are handled by the caller via an
+ * `isEditor` flag; an action's own assignee is always allowed, decided
+ * per-action.)
+ *
+ * Being a project's owner, Lead or a Member — or holding only a Comment share —
+ * does NOT grant this: the database refuses those writes, so the buttons must
+ * not appear for them (the write would 403). Only an Edit share (or the
+ * Manager / Group Owner / assignee cases above) lets the quick buttons through.
  */
 export function myEditablePlanIds(plans: Plan[], userId: string, access: PlanAccess = {}): Set<string> {
   const live = plans.filter((p) => p.archivedAt === null)
   const editShares = new Set(Array.from(access.editSharePlanIds ?? []))
   const direct = new Set<string>()
   for (const p of live) {
-    if (p.ownerId === userId || p.leadId === userId || editShares.has(p.id)) direct.add(p.id)
+    if (editShares.has(p.id)) direct.add(p.id)
   }
   const children = new Map<string, string[]>()
   for (const p of live) {
@@ -468,6 +475,37 @@ export function mySummary(
   }
 }
 
+/**
+ * "All projects" (Managers / Group Owners only): every open action on every
+ * project the person can see (RLS already scoped `plans`/`actions` to the
+ * group), grouped into the same working-day date bands. Archived plans and
+ * archived actions are ignored, exactly like {@link mySummary}; the only
+ * difference is there is no owner/lead/assignee narrowing — it shows the whole
+ * group's open work. Items due after working day 30 are dropped.
+ */
+export function allProjectsSummary(
+  actions: Action[],
+  plans: Plan[],
+  today: ISODate,
+): MySummary {
+  const open = liveActions(actions, plans)
+    .filter((a) => a.status === 'open')
+    .sort(byNextAction)
+  const waiting = liveActions(actions, plans)
+    .filter((a) => a.status === 'waiting')
+    .sort(byNextAction)
+  const bounds = dateBandBounds(today)
+  const inBand = (key: DateBandKey) => open.filter((a) => dateBandOf(a.dueOn, today, bounds) === key)
+  return {
+    overdue: inBand('overdue'),
+    next7: inBand('next7'),
+    days8to14: inBand('days8to14'),
+    days15to30: inBand('days15to30'),
+    noDate: inBand('noDate'),
+    waiting,
+  }
+}
+
 export type SummaryTiles = {
   overdue: number
   dueNext7: number
@@ -524,6 +562,45 @@ export function summaryTiles(
     waitingOnOthers: summary.waiting.length,
     projectsNeedingAttention: needingAttention,
     closedThisWeek: mineClosed.length,
+  }
+}
+
+/**
+ * The five tiles for the "All projects" view (Managers / Group Owners only),
+ * computed from the SAME whole-group rows {@link allProjectsSummary} uses so
+ * the tiles always match the list:
+ *  - Overdue / Due next 7 / Waiting: from the all-projects band summary;
+ *  - Projects needing attention: every visible (non-archived) project with an
+ *    attention warning (not just mine);
+ *  - Closed this week: every item marked Done this week across visible projects.
+ */
+export function allProjectsTiles(
+  plans: Plan[],
+  actions: Action[],
+  updates: PlanUpdate[],
+  today: ISODate,
+  s: TrackerSettings = DEFAULT_SETTINGS,
+): SummaryTiles {
+  const summary = allProjectsSummary(actions, plans, today)
+  const attention = planAttention(plans, actions, updates, today, s)
+  const weekStart = weekStartOf(today, s.weekStart)
+  const weekEnd = addDays(weekStart, 6)
+  const closed = liveActions(actions, plans).filter(
+    (a) =>
+      a.status === 'done' &&
+      a.doneOn !== null &&
+      a.doneOn >= weekStart &&
+      a.doneOn <= weekEnd,
+  )
+  const needingAttention = plans.filter(
+    (p) => p.archivedAt === null && attention.get(p.id)?.needsAttention,
+  ).length
+  return {
+    overdue: summary.overdue.length,
+    dueNext7: summary.next7.length,
+    waitingOnOthers: summary.waiting.length,
+    projectsNeedingAttention: needingAttention,
+    closedThisWeek: closed.length,
   }
 }
 

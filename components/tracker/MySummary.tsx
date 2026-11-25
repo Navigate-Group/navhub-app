@@ -74,9 +74,11 @@ export type BandBounds = {
 type Quick = 'done' | 'plus_day' | 'plus_week' | 'waiting' | 'back_to_me'
 type View = 'list' | 'project'
 type Range = 7 | 14 | 30
+type Scope = 'mine' | 'all'
 
 const VIEW_KEY = 'tracker.mySummary.view'
 const RANGE_KEY = 'tracker.mySummary.range'
+const SCOPE_KEY = 'tracker.mySummary.scope'
 
 /** The band keys included for a given range (excludes noDate + waiting). */
 function bandsForRange(range: Range): BandKey[] {
@@ -123,12 +125,21 @@ function nextDay(iso: string): string {
 export default function MySummary({
   tiles,
   groups,
+  allTiles,
+  allGroups,
+  canSeeAllProjects,
   bounds,
   today,
   chaserDays,
 }: {
   tiles: SummaryTilesView
   groups: SummaryGroups
+  /** All-projects tiles (Managers / Group Owners only); null otherwise. */
+  allTiles: SummaryTilesView | null
+  /** All-projects list (Managers / Group Owners only); null otherwise. */
+  allGroups: SummaryGroups | null
+  /** Whether to show the My projects · All projects switch. */
+  canSeeAllProjects: boolean
   bounds: BandBounds
   today: string
   chaserDays: number
@@ -139,20 +150,26 @@ export default function MySummary({
   const [error, setError] = useState<string | null>(null)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
 
-  // View + range, remembered in the browser. Start with the defaults for SSR,
-  // then hydrate from localStorage so the first paint matches the server.
+  // View + range + scope, remembered in the browser. Start with the defaults
+  // for SSR, then hydrate from localStorage so the first paint matches the
+  // server.
   const [view, setView] = useState<View>('list')
   const [range, setRange] = useState<Range>(7)
+  const [scope, setScope] = useState<Scope>('mine')
   useEffect(() => {
     try {
       const v = window.localStorage.getItem(VIEW_KEY)
       if (v === 'list' || v === 'project') setView(v)
       const r = Number(window.localStorage.getItem(RANGE_KEY))
       if (r === 7 || r === 14 || r === 30) setRange(r)
+      const sc = window.localStorage.getItem(SCOPE_KEY)
+      // Only honour a stored "all" when this person may actually see it.
+      if (sc === 'all' && canSeeAllProjects) setScope('all')
+      else if (sc === 'mine') setScope('mine')
     } catch {
       /* storage unavailable — keep defaults */
     }
-  }, [])
+  }, [canSeeAllProjects])
   function chooseView(v: View) {
     setView(v)
     try {
@@ -169,6 +186,20 @@ export default function MySummary({
       /* ignore */
     }
   }
+  function chooseScope(sc: Scope) {
+    setScope(sc)
+    try {
+      window.localStorage.setItem(SCOPE_KEY, sc)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // The tiles and list follow the switch, so the numbers always match the list.
+  // Fall back to My projects if All projects data wasn't provided (non-Manager).
+  const showingAll = scope === 'all' && canSeeAllProjects && allGroups !== null
+  const activeTiles = showingAll && allTiles ? allTiles : tiles
+  const activeGroups = showingAll && allGroups ? allGroups : groups
 
   async function quick(a: SummaryItem, q: Quick) {
     setBusyId(a.id)
@@ -213,17 +244,17 @@ export default function MySummary({
   // Hide optimistically-removed items from every list until the quiet refresh
   // reconciles.
   const visibleGroups: SummaryGroups = useMemo(() => {
-    if (hiddenIds.size === 0) return groups
+    if (hiddenIds.size === 0) return activeGroups
     const keep = (items: SummaryItem[]) => items.filter((a) => !hiddenIds.has(a.id))
     return {
-      overdue: keep(groups.overdue),
-      next7: keep(groups.next7),
-      days8to14: keep(groups.days8to14),
-      days15to30: keep(groups.days15to30),
-      noDate: keep(groups.noDate),
-      waiting: keep(groups.waiting),
+      overdue: keep(activeGroups.overdue),
+      next7: keep(activeGroups.next7),
+      days8to14: keep(activeGroups.days8to14),
+      days15to30: keep(activeGroups.days15to30),
+      noDate: keep(activeGroups.noDate),
+      waiting: keep(activeGroups.waiting),
     }
-  }, [groups, hiddenIds])
+  }, [activeGroups, hiddenIds])
 
   const activeBands = bandsForRange(range)
 
@@ -237,17 +268,18 @@ export default function MySummary({
 
   return (
     <div className="space-y-6">
-      {/* Five summary tiles */}
+      {/* Five summary tiles — they follow the My projects · All projects switch
+          so the numbers always match the list below. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Tile label="Overdue" value={tiles.overdue} tone={tiles.overdue > 0 ? 'red' : 'plain'} />
-        <Tile label="Due in next 7 working days" value={tiles.dueNext7} tone="plain" />
-        <Tile label="Waiting on others" value={tiles.waitingOnOthers} tone="plain" />
+        <Tile label="Overdue" value={activeTiles.overdue} tone={activeTiles.overdue > 0 ? 'red' : 'plain'} />
+        <Tile label="Due in next 7 working days" value={activeTiles.dueNext7} tone="plain" />
+        <Tile label="Waiting on others" value={activeTiles.waitingOnOthers} tone="plain" />
         <Tile
           label="Projects needing attention"
-          value={tiles.projectsNeedingAttention}
-          tone={tiles.projectsNeedingAttention > 0 ? 'amber' : 'plain'}
+          value={activeTiles.projectsNeedingAttention}
+          tone={activeTiles.projectsNeedingAttention > 0 ? 'amber' : 'plain'}
         />
-        <Tile label="Closed this week" value={tiles.closedThisWeek} tone="green" />
+        <Tile label="Closed this week" value={activeTiles.closedThisWeek} tone="green" />
       </div>
 
       {/* The Briefing agent's "Brief me" box, between the tiles and My open
@@ -261,11 +293,22 @@ export default function MySummary({
         </p>
       )}
 
-      {/* My open items */}
-      <section aria-label="My open items" className="space-y-4">
+      {/* Open items */}
+      <section aria-label={showingAll ? 'All open items' : 'My open items'} className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">My open items</h2>
+          <h2 className="text-lg font-semibold">{showingAll ? 'All open items' : 'My open items'}</h2>
           <div className="flex flex-wrap items-center gap-4">
+            {canSeeAllProjects && (
+              <Segmented
+                ariaLabel="Show"
+                options={[
+                  { value: 'mine', label: 'My projects' },
+                  { value: 'all', label: 'All projects' },
+                ]}
+                value={scope}
+                onChange={(v) => chooseScope(v as Scope)}
+              />
+            )}
             <Segmented
               ariaLabel="View"
               options={[
@@ -292,7 +335,8 @@ export default function MySummary({
         {itemsInRange.length === 0 ? (
           <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm">
             <p className="text-sm text-muted-foreground">
-              No open items on your projects in the next {range} working days.
+              No open items on {showingAll ? 'any project' : 'your projects'} in the next {range} working
+              days.
             </p>
           </div>
         ) : view === 'list' ? (
@@ -303,6 +347,7 @@ export default function MySummary({
             busyId={busyId}
             onQuick={quick}
             noDateCount={noDateCount}
+            showAssignee={showingAll}
           />
         ) : (
           <ByProjectView
@@ -311,6 +356,7 @@ export default function MySummary({
             bounds={bounds}
             busyId={busyId}
             onQuick={quick}
+            showAssignee={showingAll}
           />
         )}
       </section>
@@ -350,6 +396,7 @@ function ListView({
   busyId,
   onQuick,
   noDateCount,
+  showAssignee,
 }: {
   groups: SummaryGroups
   bands: BandKey[]
@@ -357,6 +404,7 @@ function ListView({
   busyId: string | null
   onQuick: (a: SummaryItem, q: Quick) => void
   noDateCount: number
+  showAssignee: boolean
 }) {
   return (
     <div className="space-y-6">
@@ -379,7 +427,14 @@ function ListView({
             </h3>
             <ul className="divide-y rounded-xl border bg-card text-card-foreground shadow-sm">
               {items.map((a) => (
-                <ListRow key={a.id} action={a} busy={busyId === a.id} onQuick={onQuick} danger={danger} />
+                <ListRow
+                  key={a.id}
+                  action={a}
+                  busy={busyId === a.id}
+                  onQuick={onQuick}
+                  danger={danger}
+                  showAssignee={showAssignee}
+                />
               ))}
             </ul>
           </section>
@@ -400,11 +455,14 @@ function ListRow({
   busy,
   onQuick,
   danger,
+  showAssignee,
 }: {
   action: SummaryItem
   busy: boolean
   onQuick: (a: SummaryItem, q: Quick) => void
   danger: boolean
+  /** All projects view: name the assignee on every row ("Nobody assigned"). */
+  showAssignee?: boolean
 }) {
   const withWhom = action.assigneeName || action.who
   return (
@@ -431,7 +489,15 @@ function ListRow({
       <div className="space-y-1.5 sm:text-right">
         <p className="text-xs text-muted-foreground">
           {action.dueOn ? `Due ${formatDate(action.dueOn)}` : 'No due date'}
-          {withWhom && <span> · {withWhom}</span>}
+          {showAssignee ? (
+            action.assigneeName ? (
+              <span> · {action.assigneeName}</span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400"> · Nobody assigned</span>
+            )
+          ) : (
+            withWhom && <span> · {withWhom}</span>
+          )}
         </p>
         {action.canAct && (
           <div className="flex flex-wrap gap-1.5 sm:justify-end">
@@ -474,12 +540,14 @@ function ByProjectView({
   bounds,
   busyId,
   onQuick,
+  showAssignee,
 }: {
   groups: SummaryGroups
   bands: BandKey[]
   bounds: BandBounds
   busyId: string | null
   onQuick: (a: SummaryItem, q: Quick) => void
+  showAssignee: boolean
 }) {
   // The By project view also shows No date items for each project.
   const shownBands: BandKey[] = [...bands, 'noDate']
@@ -645,6 +713,7 @@ function ByProjectView({
                                 busy={busyId === a.id}
                                 onQuick={onQuick}
                                 danger={band === 'overdue'}
+                                showAssignee={showAssignee}
                               />
                             ))}
                           </ul>

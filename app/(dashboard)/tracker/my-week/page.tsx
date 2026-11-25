@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
-import { getTrackerContext, getTrackerHeaderData, isEditor } from '@/lib/tracker/server'
+import { getTrackerContext, getTrackerHeaderData, isEditor, getGroupPeople, nameMap } from '@/lib/tracker/server'
 import TrackerHeader from '@/components/tracker/TrackerHeader'
 import MySummary, {
   type SummaryItem,
@@ -12,10 +12,13 @@ import { buildLookups, lookupLabel, type LookupRow } from '@/lib/tracker/view'
 import {
   mySummary,
   summaryTiles,
+  allProjectsSummary,
+  allProjectsTiles,
   dateBandBounds,
   myEditablePlanIds,
   DEFAULT_SETTINGS,
   type Action,
+  type MySummary as MySummaryData,
   type Plan,
   type PlanUpdate,
   type TrackerSettings,
@@ -57,6 +60,7 @@ export default async function MySummaryPage() {
     { data: memberRows },
     { data: shareRows },
     { data: myActionPlanRows },
+    people,
   ] = await Promise.all([
     getTrackerHeaderData(ctx),
     isEditor(supabase, groupId),
@@ -93,6 +97,9 @@ export default async function MySummaryPage() {
     // Names of the projects behind my own actions on projects I can't otherwise
     // see (SECURITY DEFINER), so each such action still shows its project name.
     supabase.rpc('tracker_my_action_plans', { p_group_id: groupId }),
+    // Group people → assignee names for the All projects view (Managers / Group
+    // Owners only), where every row shows who it's assigned to.
+    getGroupPeople(supabase, groupId),
   ])
 
   const settings: TrackerSettings = {
@@ -167,9 +174,11 @@ export default async function MySummaryPage() {
   const tiles: SummaryTilesView = summaryTiles(plans, actions, updates, userId, today, settings, access)
 
   // Plans whose actions this person may act on with the quick buttons: projects
-  // they own/lead/have-edit-share on (and sub-projects). Managers / Group
-  // Owners may act on everything (editor); an action's own assignee may always
-  // act on it.
+  // where they have an Edit share (and sub-projects). Managers / Group Owners
+  // may act on everything (editor); an action's own assignee may always act on
+  // it. Being a project's owner, Lead or Member alone is NOT enough — the
+  // database refuses those writes, so the buttons stay hidden (see
+  // myEditablePlanIds).
   const editablePlanIds = myEditablePlanIds(plans, userId, access)
   const canActOn = (a: Action): boolean => {
     if (a.assigneeId === userId) return true
@@ -177,7 +186,15 @@ export default async function MySummaryPage() {
     return a.planId !== null && editablePlanIds.has(a.planId)
   }
 
-  const toView = (a: Action): SummaryItem => ({
+  // Only Managers / Group Owners (editor) get the My projects · All projects
+  // switch; everyone else always sees My projects.
+  const canSeeAllProjects = editor
+  const assigneeNames = canSeeAllProjects && people ? nameMap(people) : {}
+
+  // `withAssignee` fills in the assignee's display name for every row — used by
+  // the All projects view, where the Due · who column names the assignee of
+  // every item (and "Nobody assigned" when there is none).
+  const toView = (a: Action, withAssignee: boolean): SummaryItem => ({
     id: a.id,
     title: a.title,
     type: a.type,
@@ -189,19 +206,30 @@ export default async function MySummaryPage() {
     dueOn: a.dueOn,
     status: a.status,
     who: whoById.get(a.id) ?? null,
-    assigneeName: null,
+    assigneeName: withAssignee && a.assigneeId ? assigneeNames[a.assigneeId] ?? null : null,
     waitingSince: a.waitingSince,
     canAct: canActOn(a),
   })
 
-  const groups: SummaryGroups = {
-    overdue: summary.overdue.map(toView),
-    next7: summary.next7.map(toView),
-    days8to14: summary.days8to14.map(toView),
-    days15to30: summary.days15to30.map(toView),
-    noDate: summary.noDate.map(toView),
-    waiting: summary.waiting.map(toView),
-  }
+  const toGroups = (s: MySummaryData, withAssignee: boolean): SummaryGroups => ({
+    overdue: s.overdue.map((a) => toView(a, withAssignee)),
+    next7: s.next7.map((a) => toView(a, withAssignee)),
+    days8to14: s.days8to14.map((a) => toView(a, withAssignee)),
+    days15to30: s.days15to30.map((a) => toView(a, withAssignee)),
+    noDate: s.noDate.map((a) => toView(a, withAssignee)),
+    waiting: s.waiting.map((a) => toView(a, withAssignee)),
+  })
+
+  const groups = toGroups(summary, false)
+
+  // All projects (Managers / Group Owners only): every open item on every
+  // visible project, with the assignee shown on every row. Computed from the
+  // same rows so its tiles match its list.
+  const allSummary = canSeeAllProjects ? allProjectsSummary(actions, plans, today) : null
+  const allGroups: SummaryGroups | null = allSummary ? toGroups(allSummary, true) : null
+  const allTiles: SummaryTilesView | null = canSeeAllProjects
+    ? allProjectsTiles(plans, actions, updates, today, settings)
+    : null
 
   const b = dateBandBounds(today)
   const bounds: BandBounds = {
@@ -228,7 +256,16 @@ export default async function MySummaryPage() {
         title="My Summary"
         showSettings={header.showSettings}
       />
-      <MySummary tiles={tiles} groups={groups} bounds={bounds} today={today} chaserDays={settings.chaserDays} />
+      <MySummary
+        tiles={tiles}
+        groups={groups}
+        allTiles={allTiles}
+        allGroups={allGroups}
+        canSeeAllProjects={canSeeAllProjects}
+        bounds={bounds}
+        today={today}
+        chaserDays={settings.chaserDays}
+      />
     </>
   )
 }

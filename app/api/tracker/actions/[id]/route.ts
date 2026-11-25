@@ -37,6 +37,22 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
   let patch: Record<string, unknown> = {}
 
+  // { archive: true } archives (hides from lists/counts/My Summary but keeps
+  // history); { archive: false } restores. Managers / Group Owners only — the
+  // database refuses others, surfaced as a clear 403.
+  if (typeof body.archive === 'boolean') {
+    const { data, error } = await supabase
+      .from('tracker_actions')
+      .update({ archived_at: body.archive ? new Date().toISOString() : null })
+      .eq('id', actionId)
+      .select('id')
+    if (error) return writeErrorResponse(error)
+    if (!data || data.length === 0) {
+      return NextResponse.json({ error: "You don't have permission to change this" }, { status: 403 })
+    }
+    return NextResponse.json({ data: { id: actionId } })
+  }
+
   const quick = strOrNull(body.quick) as Quick | null
   if (quick) {
     // Today in the group's time zone (same helper the pages use).

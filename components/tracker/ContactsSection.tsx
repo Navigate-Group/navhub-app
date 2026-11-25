@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import ContactForm, { type ExistingContact } from '@/components/tracker/ContactForm'
 import { formatDate } from '@/lib/tracker/view'
+import { cn } from '@/lib/utils'
 
 export type ContactDetail = {
   id: string
@@ -16,6 +17,8 @@ export type ContactDetail = {
   email: string | null
   notes: string | null
   last_contact: string | null
+  // Archived contacts are only shown when "Show archived" is on (Managers only).
+  archived?: boolean
 }
 
 /**
@@ -28,11 +31,14 @@ export default function ContactsSection({
   planId,
   contacts,
   canEdit,
+  canArchive,
   linkable,
 }: {
   planId: string
   contacts: ContactDetail[]
   canEdit: boolean
+  // Managers / Group Owners may archive / restore a contact (DB-guarded too).
+  canArchive: boolean
   // Group contacts not yet linked to this plan (for "link an existing one").
   linkable: ExistingContact[]
 }) {
@@ -41,7 +47,30 @@ export default function ContactsSection({
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<ContactDetail | null>(null)
   const [removing, setRemoving] = useState<ContactDetail | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  async function onArchive(c: ContactDetail, archive: boolean) {
+    setError(null)
+    setBusyId(c.id)
+    try {
+      const res = await fetch(`/api/tracker/contacts/${c.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archive }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        setError(b.error || (archive ? 'Could not archive the contact' : 'Could not restore the contact'))
+      } else {
+        router.refresh()
+      }
+    } catch {
+      setError(archive ? 'Could not archive the contact' : 'Could not restore the contact')
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   async function onRemove(c: ContactDetail) {
     setError(null)
@@ -88,7 +117,8 @@ export default function ContactsSection({
                   onClick={() => setOpenId(expanded ? null : c.id)}
                   aria-expanded={expanded}
                 >
-                  <span className="font-medium">{c.name}</span>
+                  <span className={cn('font-medium', c.archived && 'text-muted-foreground line-through')}>{c.name}</span>
+                  {c.archived && <span className="text-muted-foreground"> · Archived</span>}
                   {(c.org || c.role) && (
                     <span className="text-muted-foreground">
                       {' '}· {[c.org, c.role].filter(Boolean).join(' · ')}
@@ -107,17 +137,48 @@ export default function ContactsSection({
                     )}
                     {c.notes && <div className="whitespace-pre-line">Notes: <span className="text-foreground">{c.notes}</span></div>}
                     <div>Last spoke: <span className="text-foreground">{c.last_contact ? formatDate(c.last_contact) : '—'}</span></div>
-                    {canEdit && (
-                      <div className="flex gap-1 pt-1">
-                        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditing(c)}>Edit</Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-destructive"
-                          onClick={() => setRemoving(c)}
-                        >
-                          Remove from project
-                        </Button>
+                    {(canEdit || canArchive) && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {c.archived ? (
+                          canArchive && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2"
+                              disabled={busyId === c.id}
+                              onClick={() => onArchive(c, false)}
+                            >
+                              Restore
+                            </Button>
+                          )
+                        ) : (
+                          <>
+                            {canEdit && (
+                              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditing(c)}>Edit</Button>
+                            )}
+                            {canArchive && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2"
+                                disabled={busyId === c.id}
+                                onClick={() => onArchive(c, true)}
+                              >
+                                Archive
+                              </Button>
+                            )}
+                            {canEdit && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-destructive"
+                                onClick={() => setRemoving(c)}
+                              >
+                                Remove from project
+                              </Button>
+                            )}
+                          </>
+                        )}
                       </div>
                     )}
                   </div>

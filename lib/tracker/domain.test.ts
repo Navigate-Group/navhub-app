@@ -17,6 +17,7 @@ import {
   todayIn, waitingDueDate, weekStartOf,
   isWeekend, workingDayOne, nthWorkingDay, dateBandBounds, dateBandOf,
   myPlanIds, myEditablePlanIds, mySummary, summaryTiles,
+  allProjectsSummary, allProjectsTiles,
 } from './domain.ts'
 
 const TODAY = '2026-11-19'
@@ -241,11 +242,26 @@ test('my projects: owner, lead, member, share and sub-projects', () => {
   assert.equal(myPlanIds(plans, U3, { memberPlanIds: [P(6)] }).has(P(6)), false)
 })
 
-test('editable projects: owner/lead/edit-share only, with sub-projects', () => {
-  // Member access does not grant edit; only owner/lead/edit-share do.
+test('quick-button projects: Edit share only, with sub-projects — not owner/lead/member', () => {
+  // Being a project's owner does NOT grant the quick buttons: U1 owns every
+  // plan but holds no Edit share, so the editable set is empty. (Managers /
+  // Group Owners are handled by the caller's isEditor flag, and the assignee
+  // is allowed per-action — neither is this function's job.)
+  assert.equal(myEditablePlanIds(plans, U1).size, 0)
+
+  // Leading a project is not enough either: U2 leads P2 (= P(3)) but has no
+  // Edit share, so no quick buttons from that.
+  assert.equal(myEditablePlanIds(plans, U2).size, 0)
+
+  // Member access does not grant edit.
   assert.equal(myEditablePlanIds(plans, U3, { memberPlanIds: [P(1)] }).size, 0)
+
+  // An Edit share on the parent opens the parent AND its sub-project.
   const editU3 = myEditablePlanIds(plans, U3, { editSharePlanIds: [P(1)] })
   assert.deepEqual([...editU3].sort(), [P(1), P(2)].sort()) // parent + sub
+
+  // An Edit share on the sub-project alone does not open its parent.
+  assert.deepEqual([...myEditablePlanIds(plans, U3, { editSharePlanIds: [P(2)] })], [P(2)])
 })
 
 test('my summary groups open items by band, including unassigned on my projects', () => {
@@ -281,4 +297,39 @@ test('summary tiles match the list counts', () => {
   assert.equal(t.waitingOnOthers, s.waiting.length)
   assert.ok(t.projectsNeedingAttention >= 0)
   assert.ok(t.closedThisWeek >= 0)
+})
+
+// ── My Summary: All projects (Managers / Group Owners) ───────────────────────
+
+test('all projects shows every open item on every visible project, ignoring ownership', () => {
+  // U3 owns/leads nothing and has no access rows, yet All projects shows the
+  // whole group's open work — the same rows a Manager would see. It must
+  // include items on projects U3 isn't on, e.g. A(1) on P1a and A(7)/A(8) on P2.
+  const all = allProjectsSummary(actions, plans, TODAY)
+  const idList = (xs: Action[]) => xs.map((a) => a.id)
+  assert.deepEqual(idList(all.overdue), [A(1)])
+  assert.deepEqual(idList(all.waiting).sort(), [A(7), A(8)].sort())
+
+  // Archived actions (A(14)) and actions on an archived plan (A(13)) stay out,
+  // just like My projects.
+  const everything = [
+    ...all.overdue, ...all.next7, ...all.days8to14, ...all.days15to30, ...all.noDate, ...all.waiting,
+  ].map((a) => a.id)
+  assert.equal(everything.includes(A(14)), false)
+  assert.equal(everything.includes(A(13)), false)
+
+  // All projects is a superset of (or equal to) any single person's My projects.
+  const mineU2 = mySummary(actions, plans, U2, TODAY)
+  for (const a of mineU2.overdue) assert.ok(everything.includes(a.id))
+})
+
+test('all projects tiles match the all-projects list counts', () => {
+  const all = allProjectsSummary(actions, plans, TODAY)
+  const t = allProjectsTiles(plans, actions, updates, TODAY)
+  assert.equal(t.overdue, all.overdue.length)
+  assert.equal(t.dueNext7, all.next7.length)
+  assert.equal(t.waitingOnOthers, all.waiting.length)
+  // Every non-archived project needing attention is counted (4 in the fixture:
+  // P1, P1a, P2, P3 — see the plan-attention test).
+  assert.equal(t.projectsNeedingAttention, 4)
 })
