@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { ChevronUp, ChevronDown, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,6 +35,16 @@ export type SettingsLookupRow = {
   sort_order: number
   active: boolean
 }
+
+/** A project that has sub-projects, with how many it has. */
+export type ParentProjectRow = {
+  id: string
+  name: string
+  subCount: number
+}
+
+/** A simple { key, label } choice for the category and region dropdowns. */
+export type SettingsOption = { key: string; label: string }
 
 const selectClass = cn(
   'h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-sm',
@@ -79,13 +90,20 @@ const TIME_ZONES = [
 export default function TrackerSettings({
   settings,
   lookups,
+  parentProjects,
+  categories,
+  regions,
 }: {
   settings: SettingsValues
   lookups: SettingsLookupRow[]
+  parentProjects: ParentProjectRow[]
+  categories: SettingsOption[]
+  regions: SettingsOption[]
 }) {
   return (
     <div className="max-w-3xl space-y-6">
       <ThresholdsForm initial={settings} />
+      <ParentProjectsCard initial={parentProjects} categories={categories} regions={regions} />
       <ListsManager initial={lookups} />
     </div>
   )
@@ -244,6 +262,206 @@ function ThresholdsForm({ initial }: { initial: SettingsValues }) {
         <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
       </div>
     </form>
+  )
+}
+
+// ── Parent projects ──────────────────────────────────────────────────────────
+
+/**
+ * Parent projects card (FR-5). Lists the projects that have sub-projects, with
+ * each one's sub-project count and a link to it, and an "Add parent project"
+ * button that creates a plain top-level project (no parent of its own) via the
+ * existing POST /api/tracker/plans. Renaming, re-parenting or moving
+ * sub-projects stay on the project's Edit page, so this card only adds and
+ * links — it never edits in place.
+ */
+function ParentProjectsCard({
+  initial,
+  categories,
+  regions,
+}: {
+  initial: ParentProjectRow[]
+  categories: SettingsOption[]
+  regions: SettingsOption[]
+}) {
+  const [addOpen, setAddOpen] = useState(false)
+
+  const rows = useMemo(
+    () => [...initial].sort((a, b) => a.name.localeCompare(b.name)),
+    [initial],
+  )
+
+  return (
+    <FormSection title="Parent projects">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <FieldHint>
+          Projects that have sub-projects. Add one here, then pick it as the
+          Parent on the New / Edit project form.
+        </FieldHint>
+        <Button type="button" variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+          <Plus className="mr-1 h-4 w-4" aria-hidden />
+          Add parent project
+        </Button>
+      </div>
+
+      <ul className="divide-y rounded-md border">
+        {rows.length === 0 && (
+          <li className="p-3 text-sm text-muted-foreground">
+            No parent projects yet. Add one, or set a project&apos;s Parent on its Edit page.
+          </li>
+        )}
+        {rows.map((p) => (
+          <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+            <Link href={`/tracker/plans/${p.id}`} className="text-sm font-medium hover:underline">
+              {p.name}
+            </Link>
+            <span className="text-xs text-muted-foreground">
+              {p.subCount} {p.subCount === 1 ? 'sub-project' : 'sub-projects'}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <AddParentProjectDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        categories={categories}
+        regions={regions}
+      />
+    </FormSection>
+  )
+}
+
+function AddParentProjectDialog({
+  open,
+  onOpenChange,
+  categories,
+  regions,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  categories: SettingsOption[]
+  regions: SettingsOption[]
+}) {
+  const router = useRouter()
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
+  const [region, setRegion] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function reset() {
+    setName('')
+    setCategory('')
+    setRegion('')
+    setError(null)
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed) {
+      setError('A name is required')
+      return
+    }
+    if (!category) {
+      setError('A category is required')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      // One call to the existing create endpoint: owned by me (server default),
+      // no parent of its own, region optional.
+      const res = await fetch('/api/tracker/plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed, category, region: region || null }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(body.error || 'Could not add the parent project')
+        setSaving(false)
+        return
+      }
+      setSaving(false)
+      reset()
+      onOpenChange(false)
+      // Refresh so the new project shows in the list here and in the project
+      // form's Parent dropdown.
+      router.refresh()
+    } catch {
+      setError('Could not add the parent project')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) reset()
+        onOpenChange(next)
+      }}
+    >
+      <DialogContent>
+        <form onSubmit={onSubmit}>
+          <DialogHeader>
+            <DialogTitle>Add a parent project</DialogTitle>
+            <DialogDescription>
+              Creates a top-level project you can then pick as the Parent on the
+              New / Edit project form. Rename or re-parent it later on its Edit page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-1">
+              <Label htmlFor="parent-name">Name *</Label>
+              <Input
+                id="parent-name"
+                value={name}
+                autoFocus
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="parent-category">Category *</Label>
+              <select
+                id="parent-category"
+                className={selectClass}
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                required
+              >
+                <option value="">—</option>
+                {categories.map((c) => (
+                  <option key={c.key} value={c.key}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="parent-region">Region</Label>
+              <select
+                id="parent-region"
+                className={selectClass}
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+              >
+                <option value="">—</option>
+                {regions.map((r) => (
+                  <option key={r.key} value={r.key}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add parent project'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
