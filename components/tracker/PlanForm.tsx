@@ -363,9 +363,8 @@ function MembersField({
         </select>
       </div>
       <p className="text-xs text-muted-foreground">
-        The people working on this project. Being a member doesn&apos;t give edit
-        rights: that comes from the person&apos;s role or the project access a
-        Manager gives.
+        Members can see this project. To let them comment or edit, give them
+        access on the Project access page.
       </p>
     </div>
   )

@@ -289,7 +289,7 @@ export default function AppShell({ children, user, groups, activeGroup, visibleF
                 group, so the Core section always renders. */}
             <NavSectionLabel label="Core" mobile={mobile} />
             {show('agents')    && <NavLink href="/agents"         label="Agents"    Icon={Bot}          mobile={mobile} />}
-            <NavLink href="/tracker/plans" label="Projects" Icon={FolderKanban} mobile={mobile} />
+            <NavLink href="/tracker/plans" label="Project tracker" Icon={FolderKanban} mobile={mobile} />
             {show('documents') && <NavLink href="/documents"      label="Documents" Icon={FileText}     mobile={mobile} />}
             {show('reports')   && <NavLink href="/reports/custom" label="Reports"   Icon={BarChart2}    mobile={mobile} />}
 

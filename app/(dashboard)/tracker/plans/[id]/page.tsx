@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { unstable_noStore as noStore } from 'next/cache'
 import Link from 'next/link'
 import { getTrackerContext, isEditor, canAccess, getGroupPeople, nameMap, getTrackerHeaderData } from '@/lib/tracker/server'
@@ -48,7 +48,31 @@ export default async function PlanDetailPage({ params }: { params: { id: string 
     .eq('id', planId)
     .maybeSingle()
 
-  if (!plan) notFound()
+  // Projects are need-to-know (migration 086): a person who isn't a Manager /
+  // Group Owner, Lead, Member or given access can't read the row, so it comes
+  // back null. Rather than a bare not-found (which also fires for a truly
+  // missing id, e.g. an old link), show a friendly "no access" page back to
+  // Projects.
+  if (!plan) {
+    const header = await getTrackerHeaderData(ctx)
+    return (
+      <div className="space-y-6">
+        <TrackerHeader
+          groupName={header.groupName}
+          title="Project"
+          showSettings={header.showSettings}
+        />
+        <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm">
+          <p className="text-sm text-muted-foreground">
+            You don&apos;t have access to this project. Ask a Manager to add you.
+          </p>
+          <Link href="/tracker/plans" className="mt-3 inline-block text-sm text-primary underline">
+            Back to Projects
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   const [editor, canEdit, canComment, header] = await Promise.all([
     isEditor(supabase, groupId),

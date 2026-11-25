@@ -37,6 +37,8 @@ export type MyWeekAction = {
   typeLabel: string
   planId: string | null
   planName: string | null
+  /** Whether the user can open the project (migration 086 need-to-know). */
+  planLinkable: boolean
   dueOn: string | null
   status: string
   who: string | null
@@ -467,7 +469,7 @@ function ActionMeta({ action }: { action: MyWeekAction }) {
 }
 
 function ActionTitle({ action }: { action: MyWeekAction }) {
-  if (action.planId) {
+  if (action.planId && action.planLinkable) {
     return (
       <Link
         href={`/tracker/plans/${action.planId}`}

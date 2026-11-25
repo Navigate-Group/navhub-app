@@ -53,6 +53,7 @@ export default async function MyWeekPage() {
     { data: actionRows },
     { data: contactRows },
     { data: contactLinkRows },
+    { data: myActionPlanRows },
   ] = await Promise.all([
     getTrackerHeaderData(ctx),
     // Group settings (chaser days, follow-up days, time zone, week start) with
@@ -103,6 +104,12 @@ export default async function MyWeekPage() {
       .eq('group_id', groupId)
       .is('archived_at', null),
     supabase.from('tracker_contact_plans').select('contact_id, plan_id').eq('group_id', groupId),
+    // Names of the projects behind my own actions (migration 086). An assignee
+    // may be given an action on a project they can't otherwise see, so the
+    // RLS-scoped plan rows above won't name it. This SECURITY DEFINER function
+    // returns id + name for every project where I'm assigned a live action, so
+    // each action can still show its project's name.
+    supabase.rpc('tracker_my_action_plans', { p_group_id: groupId }),
   ])
 
   const settings: TrackerSettings = {
@@ -127,8 +134,18 @@ export default async function MyWeekPage() {
     closedThisWeek: (countsRow?.closed_this_week as number | null) ?? 0,
   }
 
+  // Plan ids the user can actually open (RLS-scoped) — used to decide whether a
+  // project name becomes a link.
+  const visiblePlanIds = new Set<string>()
+  for (const p of planRows ?? []) visiblePlanIds.add(p.id as string)
+
   const planNameById = new Map<string, string>()
   for (const p of planRows ?? []) planNameById.set(p.id as string, (p.name as string) ?? '')
+  // Overlay names for projects behind my actions that I can't otherwise see, so
+  // each action still shows which project it belongs to.
+  for (const p of (myActionPlanRows ?? []) as { id: string; name: string }[]) {
+    if (!planNameById.has(p.id)) planNameById.set(p.id, p.name ?? '')
+  }
 
   const plans: Plan[] = (planRows ?? []).map((p) => ({
     id: p.id as string,
@@ -169,6 +186,9 @@ export default async function MyWeekPage() {
     typeLabel: lookupLabel(lookups, 'action_type', a.type),
     planId: a.planId,
     planName: a.planId ? planNameById.get(a.planId) ?? null : null,
+    // Only link to the project when the user can actually open it (migration
+    // 086): an assignee may have an action on a project they can't see.
+    planLinkable: a.planId ? visiblePlanIds.has(a.planId) : false,
     dueOn: a.dueOn,
     status: a.status,
     who: whoById.get(a.id) ?? null,

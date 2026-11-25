@@ -31,9 +31,6 @@ export default async function ProjectAccessPage({ params }: { params: { id: stri
   // project (the database would refuse writes anyway).
   if (!editor) redirect(`/tracker/plans/${planId}`)
 
-  const { data: group } = await supabase.from('groups').select('name').eq('id', groupId).maybeSingle()
-  const groupName = (group?.name as string | null) ?? 'this group'
-
   // Count sub-projects (direct children) to word the note.
   const { count: subCount } = await supabase
     .from('tracker_project_plans')
@@ -79,7 +76,8 @@ export default async function ProjectAccessPage({ params }: { params: { id: stri
 
       <div className="space-y-2 rounded-lg border bg-muted/40 p-3 text-sm">
         <p>
-          Everyone in {groupName} can already read this project. Give a member Comment or Edit to let
+          Managers and Group Owners see every project. Anyone else sees this project only if
+          they&apos;re its Lead, a Member, or given access here. Give a member Comment or Edit to let
           them work on it.
         </p>
         {(subCount ?? 0) > 0 && (

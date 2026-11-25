@@ -40,6 +40,10 @@ export type PlanListItem = {
   nextMilestoneDone: number | null
   nextMilestoneTotal: number | null
   nextMilestonePct: number | null
+  /** Whether the next milestone's progress is counted from its linked actions. */
+  nextMilestoneFromActions: boolean
+  /** The project's own progress field (shown when there's no upcoming milestone). */
+  planProgressPct: number
 }
 
 type Filter = 'active' | 'attention' | 'all'
@@ -154,11 +158,20 @@ export default function PlansList({
 
       {visible.length === 0 ? (
         <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">No projects to show.</p>
-          {isEditor && (
+          {!isEditor && items.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Create one, or import from the previous tracker.
+              You haven&apos;t been added to any projects yet. A Manager can add you as Lead or
+              Member, or give you access.
             </p>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">No projects to show.</p>
+              {isEditor && (
+                <p className="text-sm text-muted-foreground">
+                  Create one, or import from the previous tracker.
+                </p>
+              )}
+            </>
           )}
         </div>
       ) : (
@@ -247,18 +260,35 @@ function PlanCard({ plan, lookups, today }: { plan: PlanListItem; lookups: Looku
           )}
         </div>
 
-        {plan.nextMilestoneTitle && (
+        {plan.nextMilestoneTitle ? (
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="truncate">
                 <span className="text-muted-foreground">Milestone: </span>
                 {plan.nextMilestoneTitle}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {plan.nextMilestoneDone} of {plan.nextMilestoneTotal} · {pct}%
-              </span>
+              {!(plan.nextMilestoneFromActions && (plan.nextMilestoneTotal ?? 0) === 0) && (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {plan.nextMilestoneDone} of {plan.nextMilestoneTotal} · {pct}%
+                </span>
+              )}
             </div>
-            <Progress value={pct} className="mt-1" />
+            {/* A "from its actions" milestone with nothing linked has no bar — it
+                would read "0 of 0 · 0%". Say so plainly instead. */}
+            {plan.nextMilestoneFromActions && (plan.nextMilestoneTotal ?? 0) === 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">No actions linked yet</p>
+            ) : (
+              <Progress value={pct} className="mt-1" />
+            )}
+          </div>
+        ) : (
+          // No upcoming milestone: fall back to the project's own progress.
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">Progress</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{plan.planProgressPct}%</span>
+            </div>
+            <Progress value={plan.planProgressPct} className="mt-1" />
           </div>
         )}
       </div>
