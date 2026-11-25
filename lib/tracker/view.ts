@@ -132,6 +132,24 @@ export function statusLabelClasses(statusKey: string | null | undefined): string
   }
 }
 
+/** Tailwind background classes for a small status-colour dot (light + dark). */
+export function statusDotClasses(statusKey: string | null | undefined): string {
+  switch (statusTone(statusKey)) {
+    case 'green':
+      return 'bg-emerald-500'
+    case 'amber':
+      return 'bg-amber-500'
+    case 'red':
+      return 'bg-red-500'
+    case 'blue':
+      return 'bg-blue-500'
+    case 'purple':
+      return 'bg-purple-500'
+    default:
+      return 'bg-muted-foreground/50'
+  }
+}
+
 // ── Attention flags → short labels (FR-2.4) ─────────────────────────────────
 
 export type AttentionRow = {
