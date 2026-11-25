@@ -266,6 +266,267 @@ export function myWeek(
   }
 }
 
+// ── My Summary (working-day date bands + access rules) ──────────────────────
+//
+// "My Summary" (the reworked My week) shows the open items on the signed-in
+// person's projects, plus any open items assigned to them on other projects,
+// grouped into working-day date bands. The rules live here so the tiles and the
+// list always agree. Working days are Monday–Friday in the group's time zone;
+// "today" is already supplied as a 'YYYY-MM-DD' string in that zone.
+
+/** True when an ISO date falls on a weekend (Saturday or Sunday). */
+export function isWeekend(d: ISODate): boolean {
+  const dow = new Date(toUtc(d)).getUTCDay() // 0 = Sun … 6 = Sat
+  return dow === 0 || dow === 6
+}
+
+/**
+ * "Working day 1" — today if today is a weekday, otherwise the next Monday.
+ * The date bands are measured forward from here.
+ */
+export function workingDayOne(today: ISODate): ISODate {
+  let d = today
+  while (isWeekend(d)) d = addDays(d, 1)
+  return d
+}
+
+/**
+ * The inclusive end date of a run of `n` working days starting at `from`
+ * (which must itself be a weekday). Walks forward counting only Mon–Fri, so
+ * the band spans any weekends in between.
+ *
+ * nthWorkingDay(from, 1) === from; nthWorkingDay(from, 7) is the 7th working
+ * day (the last day of the "next 7 working days" band).
+ */
+export function nthWorkingDay(from: ISODate, n: number): ISODate {
+  let d = from
+  let counted = 1 // `from` is working day 1
+  while (counted < n) {
+    d = addDays(d, 1)
+    if (!isWeekend(d)) counted++
+  }
+  return d
+}
+
+export type DateBandKey = 'overdue' | 'next7' | 'days8to14' | 'days15to30' | 'noDate'
+
+export type DateBandBounds = {
+  /** Working-day 1 (today or the next Monday). */
+  dayOne: ISODate
+  /** Last day of the "next 7 working days" band (inclusive). */
+  end7: ISODate
+  /** Last day of the "working days 8–14" band (inclusive). */
+  end14: ISODate
+  /** Last day of the "working days 15–30" band (inclusive). */
+  end30: ISODate
+}
+
+/** The inclusive end dates of the working-day bands, measured from today. */
+export function dateBandBounds(today: ISODate): DateBandBounds {
+  const dayOne = workingDayOne(today)
+  return {
+    dayOne,
+    end7: nthWorkingDay(dayOne, 7),
+    end14: nthWorkingDay(dayOne, 14),
+    end30: nthWorkingDay(dayOne, 30),
+  }
+}
+
+/**
+ * Which date band an open action falls in, by its due date, or null when it is
+ * past working day 30 (not shown on this page). Undated actions return
+ * 'noDate'.
+ */
+export function dateBandOf(dueOn: ISODate | null, today: ISODate, b?: DateBandBounds): DateBandKey | null {
+  if (dueOn === null) return 'noDate'
+  const bounds = b ?? dateBandBounds(today)
+  if (dueOn < today) return 'overdue'
+  if (dueOn <= bounds.end7) return 'next7'
+  if (dueOn <= bounds.end14) return 'days8to14'
+  if (dueOn <= bounds.end30) return 'days15to30'
+  return null // after working day 30 — not shown
+}
+
+/** Project access rows the summary needs to decide what counts as "mine". */
+export type PlanAccess = {
+  /** Non-archived plan ids where I'm a member (tracker_plan_members). */
+  memberPlanIds?: Iterable<string>
+  /** Plan ids where I have Comment or Edit share (tracker_plan_shares). */
+  sharedPlanIds?: Iterable<string>
+  /** Plan ids where I have Edit share specifically (for action buttons). */
+  editSharePlanIds?: Iterable<string>
+}
+
+/**
+ * The ids of "my projects": non-archived projects where I'm the owner or lead,
+ * in the Members list, or given Comment/Edit access — and every sub-project of
+ * one of those (access to a parent includes its sub-projects).
+ */
+export function myPlanIds(plans: Plan[], userId: string, access: PlanAccess = {}): Set<string> {
+  const live = plans.filter((p) => p.archivedAt === null)
+  const members = new Set(Array.from(access.memberPlanIds ?? []))
+  const shared = new Set(Array.from(access.sharedPlanIds ?? []))
+
+  // Directly "mine": owner, lead, member or shared.
+  const direct = new Set<string>()
+  for (const p of live) {
+    if (p.ownerId === userId || p.leadId === userId || members.has(p.id) || shared.has(p.id)) {
+      direct.add(p.id)
+    }
+  }
+
+  // Inherit down to sub-projects: a project counts if I'm on any ancestor.
+  const children = new Map<string, string[]>()
+  for (const p of live) {
+    if (p.parentId !== null) children.set(p.parentId, [...(children.get(p.parentId) ?? []), p.id])
+  }
+  const mine = new Set<string>()
+  const walk = (id: string, depth: number) => {
+    if (mine.has(id)) return
+    mine.add(id)
+    if (depth >= 20) return
+    for (const c of children.get(id) ?? []) walk(c, depth + 1)
+  }
+  for (const id of Array.from(direct)) walk(id, 0)
+  return mine
+}
+
+/**
+ * Plan ids whose actions I may act on with the quick buttons: projects I own or
+ * lead, or where I have an Edit share. (Managers / Group Owners are handled by
+ * the caller via an `isEditor` flag; an action's own assignee is always
+ * allowed, decided per-action.) Members and Comment access do not grant this.
+ */
+export function myEditablePlanIds(plans: Plan[], userId: string, access: PlanAccess = {}): Set<string> {
+  const live = plans.filter((p) => p.archivedAt === null)
+  const editShares = new Set(Array.from(access.editSharePlanIds ?? []))
+  const direct = new Set<string>()
+  for (const p of live) {
+    if (p.ownerId === userId || p.leadId === userId || editShares.has(p.id)) direct.add(p.id)
+  }
+  const children = new Map<string, string[]>()
+  for (const p of live) {
+    if (p.parentId !== null) children.set(p.parentId, [...(children.get(p.parentId) ?? []), p.id])
+  }
+  const out = new Set<string>()
+  const walk = (id: string, depth: number) => {
+    if (out.has(id)) return
+    out.add(id)
+    if (depth >= 20) return
+    for (const c of children.get(id) ?? []) walk(c, depth + 1)
+  }
+  for (const id of Array.from(direct)) walk(id, 0)
+  return out
+}
+
+export type SummaryAction = Action
+
+export type MySummary = {
+  /** Open items in each band, sorted by due date (undated last). */
+  overdue: SummaryAction[]
+  next7: SummaryAction[]
+  days8to14: SummaryAction[]
+  days15to30: SummaryAction[]
+  noDate: SummaryAction[]
+  /** My waiting items (any band), sorted by due date. */
+  waiting: SummaryAction[]
+}
+
+/**
+ * "My items": open actions on my projects (whoever they're assigned to, or
+ * nobody), PLUS open actions assigned to me on any other project. Grouped into
+ * the working-day date bands. Items due after working day 30 are dropped.
+ *
+ * `plans` are the RLS-scoped plan rows; `access` carries my membership / share
+ * ids. Pass the same `today` the page uses so the bands match the tiles.
+ */
+export function mySummary(
+  actions: Action[],
+  plans: Plan[],
+  userId: string,
+  today: ISODate,
+  access: PlanAccess = {},
+): MySummary {
+  const mineProjectIds = myPlanIds(plans, userId, access)
+  const live = liveActions(actions, plans)
+  // On one of my projects, OR assigned to me anywhere.
+  const mine = live
+    .filter(
+      (a) => (a.planId !== null && mineProjectIds.has(a.planId)) || a.assigneeId === userId,
+    )
+    .sort(byNextAction)
+  const open = mine.filter((a) => a.status === 'open')
+  const bounds = dateBandBounds(today)
+  const inBand = (key: DateBandKey) => open.filter((a) => dateBandOf(a.dueOn, today, bounds) === key)
+  return {
+    overdue: inBand('overdue'),
+    next7: inBand('next7'),
+    days8to14: inBand('days8to14'),
+    days15to30: inBand('days15to30'),
+    noDate: inBand('noDate'),
+    waiting: mine.filter((a) => a.status === 'waiting'),
+  }
+}
+
+export type SummaryTiles = {
+  overdue: number
+  dueNext7: number
+  waitingOnOthers: number
+  projectsNeedingAttention: number
+  closedThisWeek: number
+}
+
+/**
+ * The five My Summary tiles, computed from the SAME rows the list uses so they
+ * always agree:
+ *  - Overdue: my open items overdue;
+ *  - Due in next 7 working days: my open items in the next-7 band;
+ *  - Waiting on others: my waiting items;
+ *  - Projects needing attention: my projects with an attention warning;
+ *  - Closed this week: my items marked Done this ISO/display week.
+ *
+ * "My projects" for the attention tile uses the full access set (owner, lead,
+ * member, share, and sub-projects). "Closed this week" counts items done in the
+ * current week (week_start-aligned) that are on my projects or were assigned to
+ * me.
+ */
+export function summaryTiles(
+  plans: Plan[],
+  actions: Action[],
+  updates: PlanUpdate[],
+  userId: string,
+  today: ISODate,
+  s: TrackerSettings = DEFAULT_SETTINGS,
+  access: PlanAccess = {},
+): SummaryTiles {
+  const summary = mySummary(actions, plans, userId, today, access)
+  const mineProjectIds = myPlanIds(plans, userId, access)
+  const attention = planAttention(plans, actions, updates, today, s)
+  const weekStart = weekStartOf(today, s.weekStart)
+  const weekEnd = addDays(weekStart, 6)
+  const live = liveActions(actions, plans)
+  const mineClosed = live.filter(
+    (a) =>
+      ((a.planId !== null && mineProjectIds.has(a.planId)) || a.assigneeId === userId) &&
+      a.status === 'done' &&
+      a.doneOn !== null &&
+      a.doneOn >= weekStart &&
+      a.doneOn <= weekEnd,
+  )
+  // Projects needing attention among mine. Only count top-level attention rows
+  // once (planAttention already rolls sub-plan actions into the parent).
+  const needingAttention = plans.filter(
+    (p) => p.archivedAt === null && mineProjectIds.has(p.id) && attention.get(p.id)?.needsAttention,
+  ).length
+  return {
+    overdue: summary.overdue.length,
+    dueNext7: summary.next7.length,
+    waitingOnOthers: summary.waiting.length,
+    projectsNeedingAttention: needingAttention,
+    closedThisWeek: mineClosed.length,
+  }
+}
+
 export type ActionCounts = {
   overdue: number
   dueThisWeek: number

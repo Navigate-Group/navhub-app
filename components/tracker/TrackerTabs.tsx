@@ -26,7 +26,7 @@ export default function TrackerTabs({
   const pathname = usePathname()
 
   const tabs: Tab[] = [
-    { href: '/tracker/my-week', label: 'My week' },
+    { href: '/tracker/my-week', label: 'My Summary' },
     { href: '/tracker/plans', label: 'Projects' },
     { href: '/tracker/people', label: 'People' },
     { href: '/tracker/weekly-review', label: 'Weekly review' },

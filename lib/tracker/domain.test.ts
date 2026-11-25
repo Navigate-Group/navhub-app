@@ -15,6 +15,8 @@ import {
   DEFAULT_SETTINGS, actionCounts, addDays, closedChart, closedPerWeek, daysBetween,
   healthChecks, isoWeek, isWaitingTooLong, milestoneProgress, myWeek, planAttention,
   todayIn, waitingDueDate, weekStartOf,
+  isWeekend, workingDayOne, nthWorkingDay, dateBandBounds, dateBandOf,
+  myPlanIds, myEditablePlanIds, mySummary, summaryTiles,
 } from './domain.ts'
 
 const TODAY = '2026-11-19'
@@ -161,4 +163,122 @@ test('settings are honoured', () => {
   const s = { ...DEFAULT_SETTINGS, staleDays: 40, chaserDays: 10 }
   assert.equal(planAttention(plans, actions, updates, TODAY, s).get(P(3))!.flags.stale, false)
   assert.equal(isWaitingTooLong(actions[6], TODAY, s), false)
+})
+
+// ── My Summary: working-day date bands ───────────────────────────────────────
+
+test('weekend detection', () => {
+  assert.equal(isWeekend('2026-11-27'), false) // Friday
+  assert.equal(isWeekend('2026-11-28'), true)  // Saturday
+  assert.equal(isWeekend('2026-11-29'), true)  // Sunday
+  assert.equal(isWeekend('2026-11-30'), false) // Monday
+})
+
+test('working day 1 is today on a weekday, next Monday on a weekend', () => {
+  assert.equal(workingDayOne('2026-11-27'), '2026-11-27') // Friday → itself
+  assert.equal(workingDayOne('2026-11-28'), '2026-11-30') // Saturday → Monday
+  assert.equal(workingDayOne('2026-11-29'), '2026-11-30') // Sunday → Monday
+  assert.equal(workingDayOne('2026-11-19'), '2026-11-19') // Thursday → itself
+})
+
+test('nth working day spans weekends', () => {
+  // From Thursday 19 Nov 2026: day 1 Thu, day 2 Fri, day 3 Mon 23, …
+  assert.equal(nthWorkingDay('2026-11-19', 1), '2026-11-19')
+  assert.equal(nthWorkingDay('2026-11-19', 2), '2026-11-20')
+  assert.equal(nthWorkingDay('2026-11-19', 3), '2026-11-23') // skips Sat/Sun
+  assert.equal(nthWorkingDay('2026-11-19', 7), '2026-11-27')
+})
+
+test('date band bounds match the brief examples', () => {
+  // Friday 27 Nov 2026: next 7 working days = 27 Nov – 7 Dec.
+  const fri = dateBandBounds('2026-11-27')
+  assert.deepEqual([fri.dayOne, fri.end7], ['2026-11-27', '2026-12-07'])
+  assert.deepEqual([fri.end14, fri.end30], ['2026-12-16', '2027-01-07'])
+  // Saturday 28 Nov 2026: starts Mon 30 Nov, next 7 working days = 30 Nov – 8 Dec.
+  const sat = dateBandBounds('2026-11-28')
+  assert.deepEqual([sat.dayOne, sat.end7], ['2026-11-30', '2026-12-08'])
+  assert.deepEqual([sat.end14, sat.end30], ['2026-12-17', '2027-01-08'])
+})
+
+test('date band classification and edges', () => {
+  const today = '2026-11-27' // Friday; end7 = 7 Dec, end14 = 16 Dec, end30 = 7 Jan
+  assert.equal(dateBandOf(null, today), 'noDate')
+  assert.equal(dateBandOf('2026-11-26', today), 'overdue')  // day before today
+  assert.equal(dateBandOf('2026-11-27', today), 'next7')    // today itself
+  assert.equal(dateBandOf('2026-12-07', today), 'next7')    // last day of next7
+  assert.equal(dateBandOf('2026-12-08', today), 'days8to14')// first of 8–14
+  assert.equal(dateBandOf('2026-12-16', today), 'days8to14')// last of 8–14
+  assert.equal(dateBandOf('2026-12-17', today), 'days15to30')// first of 15–30
+  assert.equal(dateBandOf('2027-01-07', today), 'days15to30')// last of 15–30
+  assert.equal(dateBandOf('2027-01-08', today), null)        // past day 30 — hidden
+})
+
+// ── My Summary: access rules and grouping ────────────────────────────────────
+//
+// U1 owns every plan; U2 leads P2 (P3 in the fixture's P(n) ids). Set up a
+// member/share fixture for a third person to exercise membership and sharing.
+const U3 = '20000000-0000-0000-0000-000000000003'
+
+test('my projects: owner, lead, member, share and sub-projects', () => {
+  // U1 owns all live plans (P1, P1a, P2, P3, P4). P4 is finished but not
+  // archived, so it still counts as "mine" for the summary (open items shown).
+  const mineU1 = myPlanIds(plans, U1)
+  assert.deepEqual([...mineU1].sort(), [P(1), P(2), P(3), P(4), P(5)].sort())
+
+  // U2 leads P2 (= P(3)); no membership/shares → just that project.
+  assert.deepEqual([...myPlanIds(plans, U2)].sort(), [P(3)].sort())
+
+  // U3 is a member of the parent P1 (= P(1)); the sub-project P1a (= P(2))
+  // must be included by inheritance.
+  const mineU3 = myPlanIds(plans, U3, { memberPlanIds: [P(1)] })
+  assert.deepEqual([...mineU3].sort(), [P(1), P(2)].sort())
+
+  // A Comment/Edit share on the sub-project alone does NOT open its parent.
+  const mineU3b = myPlanIds(plans, U3, { sharedPlanIds: [P(2)] })
+  assert.deepEqual([...mineU3b], [P(2)])
+
+  // Archived plans never count (P5 = P(6) is archived).
+  assert.equal(myPlanIds(plans, U3, { memberPlanIds: [P(6)] }).has(P(6)), false)
+})
+
+test('editable projects: owner/lead/edit-share only, with sub-projects', () => {
+  // Member access does not grant edit; only owner/lead/edit-share do.
+  assert.equal(myEditablePlanIds(plans, U3, { memberPlanIds: [P(1)] }).size, 0)
+  const editU3 = myEditablePlanIds(plans, U3, { editSharePlanIds: [P(1)] })
+  assert.deepEqual([...editU3].sort(), [P(1), P(2)].sort()) // parent + sub
+})
+
+test('my summary groups open items by band, including unassigned on my projects', () => {
+  // U1 owns all projects, so every live open action on them is "mine",
+  // whoever it's assigned to (A(1) is assigned to U2 but on P1a = P(2)).
+  const s = mySummary(actions, plans, U1, TODAY)
+  const idList = (xs: Action[]) => xs.map((a) => a.id)
+  // Overdue: A(1) due 17 Nov (on P1a, assigned to U2 — still mine as owner).
+  assert.deepEqual(idList(s.overdue), [A(1)])
+  // No date: A(6) (U1's own, no date).
+  assert.ok(idList(s.noDate).includes(A(6)))
+  // Waiting items on my projects (A(7), A(8) on P2 = P(3)).
+  assert.deepEqual(idList(s.waiting).sort(), [A(7), A(8)].sort())
+
+  // A staff member who owns/leads nothing but is assigned A(1) still sees it,
+  // even though the project isn't otherwise theirs.
+  const sU2 = mySummary(actions, plans, U2, TODAY)
+  assert.ok(sU2.overdue.some((a) => a.id === A(1)))
+})
+
+test('items past working day 30 are not shown', () => {
+  const far: Action = act(99, { planId: P(1), dueOn: '2027-06-01' })
+  const s = mySummary([...actions, far], plans, U1, TODAY)
+  const all = [...s.overdue, ...s.next7, ...s.days8to14, ...s.days15to30, ...s.noDate]
+  assert.equal(all.some((a) => a.id === A(99)), false)
+})
+
+test('summary tiles match the list counts', () => {
+  const s = mySummary(actions, plans, U1, TODAY)
+  const t = summaryTiles(plans, actions, updates, U1, TODAY)
+  assert.equal(t.overdue, s.overdue.length)
+  assert.equal(t.dueNext7, s.next7.length)
+  assert.equal(t.waitingOnOthers, s.waiting.length)
+  assert.ok(t.projectsNeedingAttention >= 0)
+  assert.ok(t.closedThisWeek >= 0)
 })
