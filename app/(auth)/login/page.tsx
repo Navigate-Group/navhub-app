@@ -1,26 +1,20 @@
 'use client'
 
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { signIn } from '../actions'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 
 // ── /login ──────────────────────────────────────────────────────────────────
-// A single rendered page with three in-place view states:
-//   • sign-in — existing email + password sign-in form
-//   • set-up  — self-service account setup for invitees (locked email from the
-//               ?email= query param, set/confirm password + strength meter).
-//               Calls supabase.auth.updateUser({ password }), the same path the
-//               post-OTP /set-password page uses; it requires an active session.
-//   • success — brief confirmation, then back to sign-in.
-// No navigations between views — everything is React state on the same page.
-
-type View = 'sign-in' | 'set-up' | 'success'
+// Email + password sign-in form. When the user arrives from a broken or
+// expired invite link, /auth/callback redirects here with ?error=missing_code
+// or ?error=auth_failed. In that case we surface an explanation above the form
+// and offer a "Send me a new invite" flow that POSTs the email to
+// /api/invite/request (anti-enumeration: that endpoint always returns success).
 
 export default function LoginPage() {
   return (
@@ -33,13 +27,8 @@ export default function LoginPage() {
 function LoginInner() {
   const searchParams = useSearchParams()
   const invitedEmail = searchParams.get('email') ?? ''
-  // New invitees are redirected here from /auth/callback as
-  // /login?setup=true&email=… once their invite OTP is exchanged. Open the
-  // Set Up Account form directly so they can choose a password using the live
-  // session established by that exchange.
-  const isSetup = searchParams.get('setup') === 'true'
-
-  const [view, setView] = useState<View>(isSetup ? 'set-up' : 'sign-in')
+  const error        = searchParams.get('error')
+  const hasInviteError = error === 'missing_code' || error === 'auth_failed'
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -54,27 +43,90 @@ function LoginInner() {
           </p>
         </div>
 
-        {view === 'sign-in' && (
-          <SignInView onSetUp={() => setView('set-up')} />
-        )}
-        {view === 'set-up' && (
-          <SetUpView
-            invitedEmail={invitedEmail}
-            onBack={() => setView('sign-in')}
-            onSuccess={() => setView('success')}
-          />
-        )}
-        {view === 'success' && (
-          <SuccessView onBack={() => setView('sign-in')} />
-        )}
+        {hasInviteError && <InviteErrorCard invitedEmail={invitedEmail} />}
+
+        <SignInView />
       </div>
     </div>
   )
 }
 
+// ── Expired / broken invite notice + request-new-invite flow ────────────────
+
+function InviteErrorCard({ invitedEmail }: { invitedEmail: string }) {
+  const [email, setEmail]     = useState(invitedEmail)
+  const [loading, setLoading] = useState(false)
+  const [sent, setSent]       = useState(false)
+
+  async function handleRequest() {
+    if (!email.includes('@')) return
+    setLoading(true)
+    try {
+      // /api/invite/request always returns a neutral success (no account
+      // disclosure), so we show the same confirmation regardless of outcome.
+      await fetch('/api/invite/request', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: email.trim().toLowerCase() }),
+      })
+    } catch {
+      // Stay neutral — never reveal failures to the user.
+    } finally {
+      setLoading(false)
+      setSent(true)
+    }
+  }
+
+  return (
+    <Card className="mb-4 border-destructive/40">
+      <CardContent className="pt-6 space-y-4">
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">
+            Your invite link has expired or didn&apos;t work
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Enter your email and we&apos;ll send you a fresh invite link.
+          </p>
+        </div>
+
+        {sent ? (
+          <p className="text-sm text-muted-foreground">
+            If there&apos;s an invite for this email, we&apos;ve sent you a new
+            link. If nothing arrives in a few minutes, ask your NavHub
+            administrator to invite you.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="invite-email">Email</Label>
+              <Input
+                id="invite-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </div>
+            <Button
+              type="button"
+              className="w-full"
+              disabled={loading || !email.includes('@')}
+              onClick={() => void handleRequest()}
+            >
+              {loading ? 'Sending…' : 'Send me a new invite'}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ── Sign In ─────────────────────────────────────────────────────────────────
 
-function SignInView({ onSetUp }: { onSetUp: () => void }) {
+function SignInView() {
   const [error, setError]     = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -142,238 +194,6 @@ function SignInView({ onSetUp }: { onSetUp: () => void }) {
             {loading ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
-
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          New here?{' '}
-          <button
-            type="button"
-            onClick={onSetUp}
-            className="font-medium text-foreground underline-offset-4 hover:underline"
-          >
-            Set up your account
-          </button>
-        </p>
-      </CardContent>
-    </Card>
-  )
-}
-
-// ── Set Up Account ──────────────────────────────────────────────────────────
-
-type Strength = { score: 0 | 1 | 2 | 3; label: 'Weak' | 'Fair' | 'Strong' }
-
-function passwordStrength(password: string): Strength {
-  if (!password) return { score: 0, label: 'Weak' }
-
-  let variety = 0
-  if (/[a-z]/.test(password)) variety++
-  if (/[A-Z]/.test(password)) variety++
-  if (/[0-9]/.test(password)) variety++
-  if (/[^A-Za-z0-9]/.test(password)) variety++
-
-  const long = password.length >= 12
-  const mediumLength = password.length >= 8
-
-  // Strong: 12+ chars with at least 3 character classes, or 8+ with all 4
-  if ((long && variety >= 3) || (mediumLength && variety >= 4)) {
-    return { score: 3, label: 'Strong' }
-  }
-  // Fair: at least 8 chars with some variety
-  if (mediumLength && variety >= 2) {
-    return { score: 2, label: 'Fair' }
-  }
-  return { score: 1, label: 'Weak' }
-}
-
-function SetUpView({
-  invitedEmail,
-  onBack,
-  onSuccess,
-}: {
-  invitedEmail: string
-  onBack: () => void
-  onSuccess: () => void
-}) {
-  const [email, setEmail]       = useState(invitedEmail)
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm]   = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState<string | null>(null)
-
-  const strength = useMemo(() => passwordStrength(password), [password])
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setError(null)
-
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
-      return
-    }
-    if (password !== confirm) {
-      setError('Passwords do not match')
-      return
-    }
-
-    setLoading(true)
-    try {
-      const supabase = createClient()
-
-      // updateUser requires an active session, established by the invite OTP
-      // exchange. If the user arrived directly, there is no session to update.
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        setError(
-          'No active invite session was found. Please open the link from your invite email to set up your account.'
-        )
-        setLoading(false)
-        return
-      }
-
-      // Set the password AND stamp a flag so /auth/callback no longer treats
-      // this invitee as needing setup on future invite/magic-link sign-ins
-      // (the `invited_at` marker on the auth record is permanent).
-      const { error: updateErr } = await supabase.auth.updateUser({
-        password,
-        data: { password_set: true },
-      })
-      if (updateErr) throw updateErr
-
-      onSuccess()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set up account')
-      setLoading(false)
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader className="pb-4 space-y-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="self-start text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          ← Back to sign in
-        </button>
-        <p className="text-sm text-center text-muted-foreground">
-          Set up your account
-        </p>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="setup-email">Email</Label>
-            <Input
-              id="setup-email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="setup-password">Set password</Label>
-            <Input
-              id="setup-password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              placeholder="At least 8 characters"
-            />
-            {password && (
-              <div className="space-y-1 pt-1">
-                <div className="flex gap-1" aria-hidden="true">
-                  {[1, 2, 3].map(bar => (
-                    <div
-                      key={bar}
-                      className={`h-1 flex-1 rounded-full transition-colors ${
-                        strength.score >= bar
-                          ? strength.label === 'Strong'
-                            ? 'bg-green-500'
-                            : strength.label === 'Fair'
-                            ? 'bg-yellow-500'
-                            : 'bg-destructive'
-                          : 'bg-muted'
-                      }`}
-                    />
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Password strength:{' '}
-                  <span
-                    className={
-                      strength.label === 'Strong'
-                        ? 'text-green-500'
-                        : strength.label === 'Fair'
-                        ? 'text-yellow-500'
-                        : 'text-destructive'
-                    }
-                  >
-                    {strength.label}
-                  </span>
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="setup-confirm">Confirm password</Label>
-            <Input
-              id="setup-confirm"
-              name="confirm"
-              type="password"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              required
-              placeholder="Repeat your password"
-            />
-          </div>
-
-          {error && (
-            <p className="text-sm text-destructive text-center">{error}</p>
-          )}
-
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Setting up…' : 'Set up account'}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
-  )
-}
-
-// ── Success ─────────────────────────────────────────────────────────────────
-
-function SuccessView({ onBack }: { onBack: () => void }) {
-  return (
-    <Card>
-      <CardHeader className="pb-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="self-start text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          ← Back to sign in
-        </button>
-      </CardHeader>
-      <CardContent className="space-y-4 text-center">
-        <p className="text-sm font-medium text-foreground">
-          Your account is all set up.
-        </p>
-        <p className="text-sm text-muted-foreground">
-          You can now sign in with your email and new password.
-        </p>
-        <Button type="button" className="w-full" onClick={onBack}>
-          Back to sign in
-        </Button>
       </CardContent>
     </Card>
   )

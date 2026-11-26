@@ -15,7 +15,12 @@ import { createClient }       from '@/lib/supabase/client'
 //
 // The page assumes an authenticated session is already present (Supabase
 // invite flow sets one before we arrive). It calls supabase.auth.updateUser
-// to write the password, then forwards to /landing.
+// to write the password AND stamp user_metadata.password_set = true so
+// /auth/callback no longer treats this invitee as needing setup on future
+// invite / magic-link sign-ins (the `invited_at` marker is permanent).
+// Because the invite was already claimed and the active group cookie set by
+// /auth/callback, it then forwards straight to /home (already signed in) with
+// the invited group active.
 
 export default function SetPasswordPage() {
   return (
@@ -51,9 +56,18 @@ function SetPasswordInner() {
     setLoading(true)
     try {
       const supabase = createClient()
-      const { error: updateErr } = await supabase.auth.updateUser({ password })
+      // Set the password AND stamp a flag so /auth/callback no longer treats
+      // this invitee as needing setup on future invite / magic-link sign-ins
+      // (the `invited_at` marker on the auth record is permanent).
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password,
+        data: { password_set: true },
+      })
       if (updateErr) throw updateErr
-      window.location.href = '/landing'
+      // The invite was already claimed and the active group cookie set during
+      // /auth/callback, so the user is signed in with the invited group active
+      // — go straight to the app rather than bouncing through /landing.
+      window.location.href = '/home'
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to set password')
       setLoading(false)
