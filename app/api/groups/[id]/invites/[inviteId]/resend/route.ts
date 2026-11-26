@@ -80,41 +80,54 @@ export async function POST(
     // exchanges the PKCE code AND claims every pending group_invites row
     // keyed to the user's email.
     //
-    // The raw action_link is wrapped in a NavHub /invite/<token> URL via
-    // the invite_tokens table — Microsoft Safe Links / Outlook follow every
+    // We build a NavHub-owned verification URL carrying the hashed_token, NOT
+    // the raw Supabase action_link. The raw action_link points at
+    // supabase.co/auth/v1/verify, which returns the session in a URL fragment
+    // (#access_token=…) that our /auth/callback route can't read — the session
+    // is lost. /auth/callback instead calls verifyOtp({ type, token_hash })
+    // server-side, writing the session straight to cookies (no fragment).
+    //
+    // That NavHub callback URL is then wrapped in a NavHub /invite/<token> URL
+    // via the invite_tokens table — Microsoft Safe Links / Outlook follow every
     // link in an email and would otherwise consume the OTP before the user
     // clicks. See app/api/invite/[token]/accept/route.ts.
     // Existing users go straight to /landing — they already have a
     // password. New users (invite branch) land on /set-password?invite=true
     // first so they can set one before entering the app.
-    const existingCallbackUrl = `${appUrl}/auth/callback?next=/landing`
-    const newUserCallbackUrl  = `${appUrl}/auth/callback?next=${encodeURIComponent('/set-password?invite=true')}`
-    let rawActionLink: string | null = null
+    const existingCallbackNext = encodeURIComponent('/landing')
+    const newUserCallbackNext  = encodeURIComponent('/set-password?invite=true')
+    let callbackLink: string | null = null
     if (existingUser) {
       isExisting = true
       const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
         type:    'magiclink',
         email:   invite.email as string,
-        options: { redirectTo: existingCallbackUrl },
+        options: { redirectTo: `${appUrl}/auth/callback?next=/landing` },
       })
       if (linkErr) console.error('[resend] generateLink (magiclink) error:', linkErr.message)
-      rawActionLink = (linkData?.properties as { action_link?: string } | undefined)?.action_link ?? null
+      const hashedToken = (linkData?.properties as { hashed_token?: string } | undefined)?.hashed_token
+      callbackLink = hashedToken
+        ? `${appUrl}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=magiclink&next=${existingCallbackNext}`
+        : null
     } else {
       const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
         type:    'invite',
         email:   invite.email as string,
-        options: { redirectTo: newUserCallbackUrl, data: { group_id: params.id, role: invite.role, invited_by: session.user.id } },
+        options: { redirectTo: `${appUrl}/auth/callback?next=${newUserCallbackNext}`, data: { group_id: params.id, role: invite.role, invited_by: session.user.id } },
       })
       if (linkErr) console.error('[resend] generateLink (invite) error:', linkErr.message)
-      rawActionLink = (linkData?.properties as { action_link?: string } | undefined)?.action_link ?? null
+      const hashedToken = (linkData?.properties as { hashed_token?: string } | undefined)?.hashed_token
+      callbackLink = hashedToken
+        ? `${appUrl}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=invite&next=${newUserCallbackNext}`
+        : null
     }
 
-    if (rawActionLink) {
+    if (callbackLink) {
       const { data: tokenRow, error: tokenErr } = await admin
         .from('invite_tokens')
         .insert({
           invite_id:   params.inviteId,
-          action_link: rawActionLink,
+          action_link: callbackLink,
           email:       invite.email as string,
           group_id:    params.id,
           group_name:  groupName,
@@ -124,7 +137,7 @@ export async function POST(
         .single()
       if (tokenErr) {
         console.error('[resend] invite_tokens insert error:', tokenErr.message)
-        actionLink = rawActionLink
+        actionLink = callbackLink
       } else if (tokenRow) {
         actionLink = `${appUrl}/invite/${(tokenRow as { token: string }).token}`
       }

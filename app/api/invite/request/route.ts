@@ -93,41 +93,55 @@ async function reissueInvite(email: string): Promise<void> {
 
   // Both paths route through /auth/callback. Existing users land on /landing;
   // new users land on /set-password?invite=true first.
-  const existingCallbackUrl = `${appUrl}/auth/callback?next=/landing`
-  const newUserCallbackUrl  = `${appUrl}/auth/callback?next=${encodeURIComponent('/set-password?invite=true')}`
+  //
+  // We build a NavHub-owned verification URL carrying the hashed_token, NOT
+  // the raw Supabase action_link. The raw action_link points at
+  // supabase.co/auth/v1/verify, which returns the session in a URL fragment
+  // (#access_token=…) that /auth/callback can't read — the session is lost.
+  // /auth/callback instead calls verifyOtp({ type, token_hash }) server-side,
+  // writing the session straight to cookies (no fragment, no PKCE verifier).
+  const existingCallbackNext = encodeURIComponent('/landing')
+  const newUserCallbackNext  = encodeURIComponent('/set-password?invite=true')
 
-  let rawActionLink: string | null = null
+  let callbackLink: string | null = null
   let isExisting = false
   if (existingUser) {
     isExisting = true
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
       type:    'magiclink',
       email:   inv.email,
-      options: { redirectTo: existingCallbackUrl },
+      options: { redirectTo: `${appUrl}/auth/callback?next=/landing` },
     })
     if (linkErr) console.error('[invite/request] generateLink (magiclink) error:', linkErr.message)
-    rawActionLink = (linkData?.properties as { action_link?: string } | undefined)?.action_link ?? null
+    const hashedToken = (linkData?.properties as { hashed_token?: string } | undefined)?.hashed_token
+    callbackLink = hashedToken
+      ? `${appUrl}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=magiclink&next=${existingCallbackNext}`
+      : null
   } else {
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
       type:    'invite',
       email:   inv.email,
-      options: { redirectTo: newUserCallbackUrl, data: { group_id: inv.group_id, role: inv.role, invited_by: inv.invited_by } },
+      options: { redirectTo: `${appUrl}/auth/callback?next=${newUserCallbackNext}`, data: { group_id: inv.group_id, role: inv.role, invited_by: inv.invited_by } },
     })
     if (linkErr) console.error('[invite/request] generateLink (invite) error:', linkErr.message)
-    rawActionLink = (linkData?.properties as { action_link?: string } | undefined)?.action_link ?? null
+    const hashedToken = (linkData?.properties as { hashed_token?: string } | undefined)?.hashed_token
+    callbackLink = hashedToken
+      ? `${appUrl}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=invite&next=${newUserCallbackNext}`
+      : null
   }
 
-  if (!rawActionLink) return
+  if (!callbackLink) return
 
-  // Wrap the raw action_link in a NavHub /invite/<token> URL via invite_tokens
-  // so Microsoft Safe Links / Outlook can't consume the OTP before the user
-  // clicks. See migration 061 and app/api/invite/[token]/accept/route.ts.
-  let actionLink = rawActionLink
+  // Wrap the NavHub callback link in a NavHub /invite/<token> URL via
+  // invite_tokens so Microsoft Safe Links / Outlook can't consume the OTP
+  // before the user clicks. See migration 061 and
+  // app/api/invite/[token]/accept/route.ts.
+  let actionLink = callbackLink
   const { data: tokenRow, error: tokenErr } = await admin
     .from('invite_tokens')
     .insert({
       invite_id:   inv.id,
-      action_link: rawActionLink,
+      action_link: callbackLink,
       email:       inv.email,
       group_id:    inv.group_id,
       group_name:  groupName,
