@@ -11,6 +11,9 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import {
   buildActionPatch,
   buildMilestonePatch,
@@ -413,6 +416,23 @@ test('raw model input → add_comment carries the project and text', () => {
 test('add_comment needs both a project and text', () => {
   assert.equal(toChange('add_comment', { planId: 'p1' }), null) // no text
   assert.equal(toChange('add_comment', { text: 'hi' }), null) // no planId
+})
+
+// ── The brief route never sends a forced tool_choice ─────────────────────────
+//
+// BRIEF_MODEL (claude-sonnet-5-5) rejects a forced tool_choice with a 400, so
+// the route must NOT send one — it enforces the "finish with a tool" rule on
+// the server instead (nudge once, then return an answer turn). This guards
+// against PR #92's `tool_choice: { type: 'any' }` creeping back in. We read the
+// route source directly, since importing the route pulls in server-only deps.
+
+test('the brief route sends no tool_choice in the Anthropic request', () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const routePath = join(here, '..', '..', 'app', 'api', 'tracker', 'brief', 'route.ts')
+  const src = readFileSync(routePath, 'utf8')
+  // The request body is built with JSON.stringify({ model, …, messages }); no
+  // tool_choice key may appear anywhere in that request construction.
+  assert.ok(!/tool_choice/.test(src), 'route.ts must not send a tool_choice key')
 })
 
 // ── An answer reply contains no changes ───────────────────────────────────────

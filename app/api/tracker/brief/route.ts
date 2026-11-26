@@ -189,9 +189,10 @@ export async function POST(request: Request) {
           max_tokens: BRIEF_MAX_TOKENS,
           system,
           tools,
-          // Require a tool every turn, so the person always gets a confirm card,
-          // a question with options, or an answer — never a bare "I will…" line.
-          tool_choice: { type: 'any' },
+          // No forced tool choice: BRIEF_MODEL doesn't support one, so the model
+          // picks tools itself (the default). The "always finish with a tool"
+          // rule is enforced on the server: a plain-text reply is nudged once to
+          // use a tool, then returned as an answer turn (see below).
           messages: convo,
         }),
       })
@@ -214,6 +215,12 @@ export async function POST(request: Request) {
     console.error(`[tracker/brief] Anthropic error — ${detail}`)
     return { ok: false, reason }
   }
+
+  // The "always finish with a tool" rule is enforced here, not by a forced tool
+  // choice (BRIEF_MODEL doesn't support one). If the model replies in plain text, we
+  // nudge it once per turn to use a tool; if it still won't, we return its text
+  // as an answer turn (nothing to apply). This flag makes the nudge fire once.
+  let nudgedForTool = false
 
   try {
     for (let step = 0; step < BRIEF_MAX_STEPS; step++) {
@@ -292,12 +299,29 @@ export async function POST(request: Request) {
           t.name === 'find_contact',
       )
       if (reads.length === 0) {
-        // No tool call — plain message (or a nudge if empty).
+        // No tool call — the model replied in plain text. The rule is to always
+        // finish with a tool (propose_changes / ask_user / answer), so:
+        //  • once per turn, add the reply and a short nudge to the conversation
+        //    and call the model again (same request, same time limit);
+        //  • if it still won't use a tool, return the text as an answer turn
+        //    (plain text shown to the person; nothing is proposed or applied).
+        if (!nudgedForTool) {
+          nudgedForTool = true
+          // Carry the model's reply into the conversation, then nudge it to pick
+          // a tool. Fall back to a single space when the reply was empty, since
+          // an assistant turn must carry some content.
+          convo.push({ role: 'assistant', content: blocks.length > 0 ? blocks : text || ' ' })
+          convo.push({
+            role: 'user',
+            content: 'Reply using one of the tools: propose_changes, ask_user or answer.',
+          })
+          continue
+        }
         const turn: BriefTurn = {
-          type: 'message',
+          type: 'answer',
           text: text || "Tell me what happened and I'll work out the changes.",
         }
-        logMetrics('message')
+        logMetrics('answer-fallback')
         return NextResponse.json({ turn, metrics: metrics() })
       }
 
