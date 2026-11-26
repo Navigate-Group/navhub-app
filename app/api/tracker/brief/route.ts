@@ -15,19 +15,81 @@ import {
   BRIEF_MAX_STEPS,
   BRIEF_MAX_TOKENS,
   BRIEF_TIMEOUT_MS,
+  type BriefErrorReason,
   type BriefMessage,
   type BriefMetrics,
   type BriefTurn,
 } from '@/lib/tracker/brief'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+// 120s overall: BRIEF_TIMEOUT_MS (100s) caps the agent's tool loop, leaving
+// ~20s of headroom for context build, key lookup and cleanup.
+export const maxDuration = 120
 
 type AnthropicContentBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
 
 type AnthropicMessage = { role: 'user' | 'assistant'; content: unknown }
+
+// Shape of Anthropic's JSON error body: { type: 'error', error: { type, message } }.
+type AnthropicErrorBody = {
+  error?: { type?: string; message?: string }
+}
+
+/**
+ * Return a 503 carrying the specific failure reason so the client can show the
+ * right message. The reason is a coarse enum (never raw provider text or the
+ * key); the real detail is logged on the server by the caller.
+ */
+function briefError(reason: BriefErrorReason) {
+  return NextResponse.json({ error: 'AI service unavailable', reason }, { status: 503 })
+}
+
+/**
+ * Classify a non-OK Anthropic response into a client-facing reason, and build a
+ * one-line server log of the real cause (HTTP status + Anthropic error
+ * type/message — never the API key). The response body is read as text first so
+ * a non-JSON error (e.g. an HTML gateway page) still logs usefully.
+ */
+async function classifyAnthropicError(
+  res: Response,
+): Promise<{ reason: BriefErrorReason; detail: string }> {
+  const status = res.status
+  let errType = ''
+  let errMessage = ''
+  try {
+    const raw = await res.text()
+    try {
+      const body = JSON.parse(raw) as AnthropicErrorBody
+      errType = body.error?.type ?? ''
+      errMessage = body.error?.message ?? ''
+    } catch {
+      // Non-JSON body — keep a trimmed snippet for the log.
+      errMessage = raw.slice(0, 300)
+    }
+  } catch {
+    /* no body */
+  }
+
+  // Out of credit: Anthropic returns a 400 with a credit-balance message.
+  const creditHit =
+    /credit balance is too low|insufficient.*credit|out of credit/i.test(errMessage) ||
+    /credit/i.test(errType)
+  let reason: BriefErrorReason
+  if (creditHit) {
+    reason = 'credit'
+  } else if (status === 429 || status === 529) {
+    reason = 'rate-limit'
+  } else {
+    reason = 'error'
+  }
+
+  const detail = `status ${status}${errType ? `, type ${errType}` : ''}${
+    errMessage ? `, message ${errMessage}` : ''
+  }`
+  return { reason, detail }
+}
 
 // POST /api/tracker/brief — one turn of the Briefing agent conversation.
 // Body: { messages: BriefMessage[] }  (the running chat; last entry is the new
@@ -57,8 +119,10 @@ export async function POST(request: Request) {
 
   const apiKey = await resolveAnthropicKey(groupId)
   if (!apiKey) {
-    // The client shows the agreed "isn't available" message for any failure.
-    return NextResponse.json({ error: 'AI service unavailable' }, { status: 503 })
+    // Log the cause (not the config lookup details, and never a key) and tell
+    // the client specifically that no key is set up for this group.
+    console.error('[tracker/brief] no API key')
+    return briefError('no-key')
   }
 
   const briefCtx = await buildBriefContext(supabase, groupId)
@@ -104,9 +168,15 @@ export async function POST(request: Request) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), BRIEF_TIMEOUT_MS)
 
-  try {
-    for (let step = 0; step < BRIEF_MAX_STEPS; step++) {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+  // One Anthropic call, with a single retry on 429 (rate-limited) or 529
+  // (overloaded) after a short wait. Returns the OK response, or an already
+  // classified failure (reason + logged detail) when it stays non-OK.
+  const RETRY_WAIT_MS = 750
+  const callAnthropic = async (): Promise<
+    { ok: true; res: Response } | { ok: false; reason: BriefErrorReason }
+  > => {
+    const doFetch = () =>
+      fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         signal: controller.signal,
         headers: {
@@ -126,10 +196,33 @@ export async function POST(request: Request) {
         }),
       })
 
-      if (!res.ok) {
+    let res = await doFetch()
+    if (res.ok) return { ok: true, res }
+
+    // Retry once on 429/529, after a brief wait, within the overall time limit.
+    if (res.status === 429 || res.status === 529) {
+      const first = await classifyAnthropicError(res)
+      console.warn(
+        `[tracker/brief] Anthropic ${first.detail} — retrying once after ${RETRY_WAIT_MS}ms`,
+      )
+      await new Promise((r) => setTimeout(r, RETRY_WAIT_MS))
+      res = await doFetch()
+      if (res.ok) return { ok: true, res }
+    }
+
+    const { reason, detail } = await classifyAnthropicError(res)
+    console.error(`[tracker/brief] Anthropic error — ${detail}`)
+    return { ok: false, reason }
+  }
+
+  try {
+    for (let step = 0; step < BRIEF_MAX_STEPS; step++) {
+      const call = await callAnthropic()
+      if (!call.ok) {
         logMetrics('ai-error')
-        return NextResponse.json({ error: 'AI service error' }, { status: 503 })
+        return briefError(call.reason)
       }
+      const res = call.res
 
       modelCalls += 1
       const data = (await res.json()) as {
@@ -246,9 +339,24 @@ export async function POST(request: Request) {
     }
     logMetrics('step-cap')
     return NextResponse.json({ turn, metrics: metrics() })
-  } catch {
+  } catch (e) {
+    // The AbortController fires on BRIEF_TIMEOUT_MS: a fetch aborted that way
+    // throws an AbortError. Treat that as a timeout; everything else is a
+    // genuine exception. Log the real cause (type + message, never the key).
+    const elapsed = Date.now() - startedAt
+    const isAbort =
+      (e instanceof DOMException && e.name === 'AbortError') ||
+      (e instanceof Error && e.name === 'AbortError')
+    if (isAbort) {
+      console.error(`[tracker/brief] timeout after ${elapsed}ms`)
+      logMetrics('timeout')
+      return briefError('timeout')
+    }
+    const type = e instanceof Error ? e.name : typeof e
+    const message = e instanceof Error ? e.message : String(e)
+    console.error(`[tracker/brief] exception — ${type}: ${message}`)
     logMetrics('exception')
-    return NextResponse.json({ error: 'AI service unavailable' }, { status: 503 })
+    return briefError('error')
   } finally {
     clearTimeout(timer)
   }

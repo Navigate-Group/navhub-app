@@ -20,7 +20,11 @@ export const BRIEF_MODEL = 'claude-sonnet-5-5'
 /** Safety caps for the server-side tool loop. */
 export const BRIEF_MAX_STEPS = 8
 export const BRIEF_MAX_TOKENS = 2048
-export const BRIEF_TIMEOUT_MS = 60_000
+// The agent timeout is kept ~20s below the route's maxDuration (120s) so there
+// is headroom for setup (context build, key lookup) and cleanup before the
+// platform kills the request. Multi-step questions (several look-ups plus model
+// calls) need the extra time.
+export const BRIEF_TIMEOUT_MS = 100_000
 
 // ── Proposed changes ─────────────────────────────────────────────────────────
 
@@ -166,6 +170,42 @@ export type BriefTurn =
 
 /** A single chat message exchanged with the client. */
 export type BriefMessage = { role: 'user' | 'assistant'; content: string }
+
+/**
+ * The reason a briefing turn failed, encoded by the conversation route so the
+ * client can show a specific message instead of one generic line. The server
+ * logs the real detail (HTTP status, Anthropic error type/message, exception
+ * type, elapsed time) but only sends this coarse reason to the client — never
+ * the API key or raw provider text.
+ */
+export type BriefErrorReason =
+  /** The turn ran past the agent timeout (AbortSignal). */
+  | 'timeout'
+  /** Anthropic's account has no credit (credit-balance error). */
+  | 'credit'
+  /** Anthropic rate-limited (429) or overloaded (529), still failing after a retry. */
+  | 'rate-limit'
+  /** No Anthropic API key is configured for this group. */
+  | 'no-key'
+  /** Any other Anthropic / server error. */
+  | 'error'
+
+/** The specific message shown in the Brief me box for each failure reason. */
+export const BRIEF_ERROR_MESSAGES: Record<BriefErrorReason, string> = {
+  timeout: 'That took too long. Try a shorter briefing, or ask about one project at a time.',
+  credit: 'The AI account is out of credit. Ask an administrator to top it up.',
+  'rate-limit': 'The AI service is busy. Try again in a minute.',
+  'no-key': "The Briefing agent isn't set up for this group yet. Ask an administrator.",
+  error: "The Briefing agent isn't available right now. You can still update projects as usual.",
+}
+
+/** Map a reason string from the route to its UI message, with a safe fallback. */
+export function briefErrorMessage(reason: string | null | undefined): string {
+  if (reason && reason in BRIEF_ERROR_MESSAGES) {
+    return BRIEF_ERROR_MESSAGES[reason as BriefErrorReason]
+  }
+  return BRIEF_ERROR_MESSAGES.error
+}
 
 /** Per-line result after applying. */
 export type ApplyResult = { id: string; ok: boolean; error?: string }

@@ -3,11 +3,12 @@
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import type {
-  BriefMessage,
-  BriefTurn,
-  ProposedChangeItem,
-  ApplyResult,
+import {
+  briefErrorMessage,
+  type BriefMessage,
+  type BriefTurn,
+  type ProposedChangeItem,
+  type ApplyResult,
 } from '@/lib/tracker/brief'
 
 /**
@@ -83,7 +84,17 @@ export default function BriefingAgent() {
         body: JSON.stringify({ messages: chatFromEntries(nextEntries) }),
       })
       if (!res.ok) {
-        setError(UNAVAILABLE)
+        // The route encodes a specific failure reason (timeout, credit,
+        // rate-limit, no-key, error); show the matching message, falling back
+        // to the generic line when the body can't be read or has no reason.
+        let reason: string | null = null
+        try {
+          const body = (await res.json()) as { reason?: string }
+          reason = body.reason ?? null
+        } catch {
+          /* no body — use the generic fallback */
+        }
+        setError(briefErrorMessage(reason))
         return
       }
       const { turn } = (await res.json()) as { turn: BriefTurn }
