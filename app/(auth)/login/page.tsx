@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { PasswordVisibilityToggle } from '@/components/ui/password-visibility-toggle'
 
 // ── /login ──────────────────────────────────────────────────────────────────
 // Email + password sign-in form. When the user arrives from a broken or
@@ -117,6 +118,9 @@ function InviteErrorCard({ invitedEmail }: { invitedEmail: string }) {
             >
               {loading ? 'Sending…' : 'Send me a new invite'}
             </Button>
+            <p className="text-xs text-muted-foreground">
+              Already have an account? Sign in below, or use Forgot password.
+            </p>
           </div>
         )}
       </CardContent>
@@ -129,6 +133,7 @@ function InviteErrorCard({ invitedEmail }: { invitedEmail: string }) {
 function SignInView() {
   const [error, setError]     = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -176,14 +181,21 @@ function SignInView() {
                 Forgot password?
               </Link>
             </div>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                placeholder="••••••••"
+                className="pr-10"
+              />
+              <PasswordVisibilityToggle
+                visible={showPassword}
+                onToggle={() => setShowPassword(v => !v)}
+              />
+            </div>
           </div>
 
           {error && (

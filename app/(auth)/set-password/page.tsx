@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams }    from 'next/navigation'
 import { Loader2 }            from 'lucide-react'
 import { createClient }       from '@/lib/supabase/client'
+import { PasswordVisibilityToggle } from '@/components/ui/password-visibility-toggle'
 
 // ── /set-password ───────────────────────────────────────────────────────────
 // Two callers route here:
@@ -38,13 +39,20 @@ function SetPasswordInner() {
   const [confirm,  setConfirm]  = useState('')
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState<string | null>(null)
+  const [email,    setEmail]    = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm,  setShowConfirm]  = useState(false)
 
   // [diag] temporary — confirm the invite session survived the callback
   // redirect. Stripped after the green incognito run confirms the fix is live.
+  // Also capture the signed-in user's email so the hidden username field and
+  // the visible read-only email field below are populated for password
+  // managers.
   useEffect(() => {
     const supabase = createClient()
     void supabase.auth.getSession().then(({ data }) => {
       console.log('[diag] set-password entry hasSession:', !!data.session)
+      if (data.session?.user?.email) setEmail(data.session.user.email)
     })
   }, [])
 
@@ -96,28 +104,59 @@ function SetPasswordInner() {
           </div>
 
           <div className="space-y-3">
+            {/* Read-only email so password managers save the new password under
+                the right account. autoComplete="username" pairs with the
+                new-password fields below. */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Password</label>
+              <label htmlFor="set-password-email" className="text-sm font-medium text-foreground">Email</label>
               <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="At least 8 characters"
-                autoFocus
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                id="set-password-email"
+                type="email"
+                value={email}
+                autoComplete="username"
+                readOnly
+                className="w-full h-9 rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground focus:outline-none"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Confirm password</label>
-              <input
-                type="password"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                placeholder="Repeat your password"
-                onKeyDown={e => { if (e.key === 'Enter' && !loading) void handleSubmit() }}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-              />
+              <label htmlFor="set-password-new" className="text-sm font-medium text-foreground">Password</label>
+              <div className="relative">
+                <input
+                  id="set-password-new"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  autoFocus
+                  autoComplete="new-password"
+                  className="w-full h-9 rounded-md border border-input bg-background pl-3 pr-10 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <PasswordVisibilityToggle
+                  visible={showPassword}
+                  onToggle={() => setShowPassword(v => !v)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="set-password-confirm" className="text-sm font-medium text-foreground">Confirm password</label>
+              <div className="relative">
+                <input
+                  id="set-password-confirm"
+                  type={showConfirm ? 'text' : 'password'}
+                  value={confirm}
+                  onChange={e => setConfirm(e.target.value)}
+                  placeholder="Repeat your password"
+                  autoComplete="new-password"
+                  onKeyDown={e => { if (e.key === 'Enter' && !loading) void handleSubmit() }}
+                  className="w-full h-9 rounded-md border border-input bg-background pl-3 pr-10 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <PasswordVisibilityToggle
+                  visible={showConfirm}
+                  onToggle={() => setShowConfirm(v => !v)}
+                />
+              </div>
             </div>
           </div>
 

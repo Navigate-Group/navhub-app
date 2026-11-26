@@ -86,13 +86,33 @@ async function reissueInvite(email: string): Promise<void> {
   const fromDomain = process.env.RESEND_FROM_DOMAIN   ?? 'navhub.co'
 
   // Determine if the invitee already has an auth account — drives whether we
-  // mint a magiclink (existing) or an invite link (new user), mirroring the
-  // admin resend route.
+  // mint a magiclink (existing record) or an invite link (brand-new user).
   const { data: userList } = await admin.auth.admin.listUsers({ perPage: 1000 })
   const existingUser = userList?.users.find(u => (u.email ?? '').toLowerCase() === email)
 
-  // Both paths route through /auth/callback. Existing users land on /landing;
-  // new users land on /set-password?invite=true first.
+  // Anti-abuse: only re-issue a link to someone who is genuinely still an
+  // invitee. That means either:
+  //   • no NavHub account yet; or
+  //   • an account that has never set a password (user_metadata.password_set
+  //     is not true) AND has no group membership in user_groups.
+  // An active user — even one who happens to have an old/pending invite row to
+  // another group — must get nothing (we still return the neutral success).
+  if (existingUser) {
+    const passwordSet = (existingUser.user_metadata as { password_set?: unknown } | null)?.password_set === true
+    if (passwordSet) return
+
+    const { data: memberships } = await admin
+      .from('user_groups')
+      .select('user_id')
+      .eq('user_id', existingUser.id)
+      .limit(1)
+    if (memberships && memberships.length > 0) return
+  }
+
+  // Everyone who reaches this point is still an invitee (brand-new, or an
+  // account that never set a password and has no group membership). Both paths
+  // route through /auth/callback and land on /set-password?invite=true so the
+  // invitee completes setup.
   //
   // We build a NavHub-owned verification URL carrying the hashed_token, NOT
   // the raw Supabase action_link. The raw action_link points at
@@ -100,22 +120,22 @@ async function reissueInvite(email: string): Promise<void> {
   // (#access_token=…) that /auth/callback can't read — the session is lost.
   // /auth/callback instead calls verifyOtp({ type, token_hash }) server-side,
   // writing the session straight to cookies (no fragment, no PKCE verifier).
-  const existingCallbackNext = encodeURIComponent('/landing')
   const newUserCallbackNext  = encodeURIComponent('/set-password?invite=true')
 
   let callbackLink: string | null = null
-  let isExisting = false
   if (existingUser) {
-    isExisting = true
+    // Existing auth record that never finished setup: generateLink({type:
+    // 'invite'}) would fail because the user exists, so mint a magiclink but
+    // still route to set-password rather than /landing.
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
       type:    'magiclink',
       email:   inv.email,
-      options: { redirectTo: `${appUrl}/auth/callback?next=/landing` },
+      options: { redirectTo: `${appUrl}/auth/callback?next=${newUserCallbackNext}` },
     })
     if (linkErr) console.error('[invite/request] generateLink (magiclink) error:', linkErr.message)
     const hashedToken = (linkData?.properties as { hashed_token?: string } | undefined)?.hashed_token
     callbackLink = hashedToken
-      ? `${appUrl}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=magiclink&next=${existingCallbackNext}`
+      ? `${appUrl}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=magiclink&next=${newUserCallbackNext}`
       : null
   } else {
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
@@ -175,7 +195,7 @@ async function reissueInvite(email: string): Promise<void> {
         <p style="margin:24px 0">
           <a href="${actionLink}"
              style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">
-            ${isExisting ? 'Sign in to NavHub →' : 'Accept invitation &amp; set up your account →'}
+            Accept invitation &amp; set up your account →
           </a>
         </p>
         <p style="margin:0 0 8px;font-size:12px;color:#777">This link expires in 24 hours.</p>
