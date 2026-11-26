@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader }  from '@/components/ui/card'
 import { Button }                         from '@/components/ui/button'
 import { Input }                          from '@/components/ui/input'
 import { Label }                          from '@/components/ui/label'
+import { PasswordVisibilityToggle }       from '@/components/ui/password-visibility-toggle'
 
 export default function ResetPasswordPage() {
   const router   = useRouter()
@@ -17,6 +18,8 @@ export default function ResetPasswordPage() {
   const [error,           setError]           = useState<string | null>(null)
   const [loading,         setLoading]         = useState(false)
   const [sessionReady,    setSessionReady]    = useState(false)
+  const [showPassword,    setShowPassword]    = useState(false)
+  const [showConfirm,     setShowConfirm]     = useState(false)
 
   // Supabase recovery links set a RECOVERY session via the hash fragment.
   // onAuthStateChange fires with 'PASSWORD_RECOVERY' or 'SIGNED_IN'.
@@ -86,29 +89,43 @@ export default function ResetPasswordPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="password">New Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    autoComplete="new-password"
-                    required
-                    minLength={8}
-                    placeholder="Min. 8 characters"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      autoComplete="new-password"
+                      required
+                      minLength={8}
+                      placeholder="Min. 8 characters"
+                      className="pr-10"
+                    />
+                    <PasswordVisibilityToggle
+                      visible={showPassword}
+                      onToggle={() => setShowPassword(v => !v)}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <Label htmlFor="confirmPassword">Confirm Password</Label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    autoComplete="new-password"
-                    required
-                    placeholder="••••••••"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="confirmPassword"
+                      type={showConfirm ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      autoComplete="new-password"
+                      required
+                      placeholder="••••••••"
+                      className="pr-10"
+                    />
+                    <PasswordVisibilityToggle
+                      visible={showConfirm}
+                      onToggle={() => setShowConfirm(v => !v)}
+                    />
+                  </div>
                 </div>
 
                 {error && (
